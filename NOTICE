@@ -1,0 +1,7 @@
+YABI - Yet Another BDF Integrator
+Copyright (C) 2010-2012 Dominik Skanda
+
+This product includes software developed by Dominik Skanda.
+
+CppAD is an external dependency and is not included in this distribution.
+See https://github.com/coin-or/CppAD for its license terms.

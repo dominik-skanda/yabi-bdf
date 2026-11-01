@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "yabi",
+    hdrs = glob(["include/yabi/**/*.h", "include/yabi/**/*.hpp", "include/yabi/**/*.ipp"]),
+    includes = ["include"],
+    deps = [],
+)
