@@ -784,6 +784,17 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
     delete[] temp_adjoint;
     delete[] temp;
 
+    // T26 guard: same as forward — the taping replay is unstable for high-order BDF
+    // over long stiff intervals. Fail loudly instead of returning a diverged value.
+    for (i = 0; i < numOfSpecies; i++)
+        for (j = 0; j < stored_adjoint_order; j++)
+            if (!std::isfinite(solution_adjoint_species[i][j]) ||
+                std::fabs(solution_adjoint_species[i][j]) > 1e50) {
+                YABI_LOG_ERROR("ERROR: reverse sensitivity diverged. The taping replay is unstable for this "
+                               "problem; use the simultaneous (variational) sensitivity instead.");
+                return false;
+            }
+
     return true;
 }
 

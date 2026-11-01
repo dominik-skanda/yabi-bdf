@@ -290,6 +290,19 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
 
         if (intermediateTAPE->calculate_output == true) {
             calculate_output_vector_forward();
+            // T26 guard: the taping replay is unstable for high-order BDF over long stiff
+            // intervals (HIRES t=321.812 blows up ~1e+100 vs the correct ~1e-3). Fail loudly
+            // instead of returning a value ~100 orders of magnitude off — the simultaneous
+            // (variational) sensitivity is the stable path.
+            for (i = 0; i < numOfSpecies; i++)
+                if (!std::isfinite(forward_solution_Vector[i]) ||
+                    std::fabs(forward_solution_Vector[i]) > 1e50) {
+                    YABI_LOG_ERROR("ERROR: forward sensitivity diverged (component ", i, " = ",
+                                   forward_solution_Vector[i],
+                                   "). The taping replay is unstable for this problem; use the simultaneous "
+                                   "(variational) sensitivity instead.");
+                    return false;
+                }
             adjointTapePointer = intermediateTAPE;
             possible_adjoint_order = order + 1;
             start_adjoint_from_forward_mode = true;
