@@ -1348,6 +1348,59 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
         stepFAIL += 1;
 
+        // DASSL/LSODE-style order reduction (Gear 1971; Byrne & Hindmarsh 1975; Petzold 1982;
+        // Hindmarsh/LSODE): on a rejected step, estimate the local truncation error at order-1
+        // from the highest Nordsieck term and, if dropping the order gives a smaller (or already
+        // acceptable) error, reduce the order instead of only shrinking the step. The reduction is
+        // recorded in the tape (orderDOWN marker below) so the sensitivity replay reconstructs it.
+        if (order_corrector > 1) {
+            Scalar c_down = -1.0;
+            for (i = 0; i < order_corrector - 1; i++)
+                c_down *= stepSizeSet_new[i] / step_size_h;
+            c_down /= (l_i[1] - (step_size_h / stepSizeSet_new[order_corrector - 1]));
+            Scalar *err_down = new Scalar[numOfSpecies];
+            for (i = 0; i < numOfSpecies; i++)
+                err_down[i] = z_corrector[numOfSpecies * order_corrector + i] * c_down / error_weights[i];
+            Scalar norm_err_down = linalg::NRM2(numOfSpecies, err_down, blasONE) / numOfSpecies;
+            delete[] err_down;
+            if (norm_err_down < normWeightedLocalTruncError || norm_err_down <= reachableError) {
+                order_corrector -= 1;
+                stepFAIL = 0;
+                YABI_LOG_WARN("reducing BDF order to ", order_corrector,
+                              " (order-1 error estimate)");
+
+                // Record the mid-step order reduction in the sensitivity tape so the replay
+                // reconstructs the correct order. Insert an orderDOWN marker entry immediately
+                // before the current step entry (mirrors prepare_next_step's order-change marker).
+                if (taping && endTAPE != NULL) {
+                    bdf_TAPE *marker = new bdf_TAPE;
+                    marker->P = NULL;
+                    marker->endSolution = NULL;
+                    marker->direct_fun = NULL;
+                    marker->old_parameter_seed = NULL;
+                    marker->old_y_seed = NULL;
+                    marker->updatedTaylorFunction = false;
+                    marker->lastTaylorOrder = 0;
+                    marker->CppAD_tape = new CppAD::ADFun<Scalar> *[MAXNEWTONITERATION];
+                    for (i = 0; i < MAXNEWTONITERATION; i++)
+                        marker->CppAD_tape[i] = NULL;
+                    marker->ip = NULL;
+                    marker->scaling_D1 = NULL;
+                    marker->scaling_D2 = NULL;
+                    marker->calculate_output = false;
+                    marker->orderUP = false;
+                    marker->orderDOWN = true;
+                    marker->stepSize = step_size_h;
+                    marker->timePoint = t_i[1];
+                    marker->forwardLINK = endTAPE;
+                    marker->backLINK = endTAPE->backLINK;
+                    if (endTAPE->backLINK != NULL)
+                        endTAPE->backLINK->forwardLINK = marker;
+                    endTAPE->backLINK = marker;
+                }
+            }
+        }
+
         if (eta > 1.0) {
             eta = STEP_NOT_ACCEPTED_REDUCTION;
 
