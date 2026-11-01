@@ -129,6 +129,18 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             }
             calculate_error_weights(error_weights_derivatives[i], z_predictor_derivatives[i],
                                     absolut_error_derivatives[i], relative_error_derivatives[i]);
+            // Same guard as the main path (T09): a zero/non-finite weight makes the later
+            // logb(error_weights_derivatives[z][i]) undefined (flushes the sensitivity Newton
+            // matrix via scalbn(INT_MIN)). Report it instead of silently returning a wrong answer.
+            for (j = 0; j < numOfSpecies; j++)
+                if (!(error_weights_derivatives[i][j] > 0.0) ||
+                    !std::isfinite(error_weights_derivatives[i][j])) {
+                    YABI_LOG_ERROR("ERROR: non-positive or non-finite derivative error weight for direction ",
+                                   i, ", species ", j, " (", error_weights_derivatives[i][j], ")!");
+
+                    internalError = true;
+                    return false;
+                }
         }
     }
 
