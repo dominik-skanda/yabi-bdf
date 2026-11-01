@@ -1,110 +1,213 @@
 #!/usr/bin/env python3
-"""Plot from verified BDF outputs with true references where available."""
-import os, sys, numpy as np, matplotlib.pyplot as plt
-sys.path.insert(0, os.path.expanduser("~/.local/lib/python3.14/site-packages"))
-OUT = "/home/dskanda/Projects/yabi-bdf/plots"
+"""
+YABI benchmark gallery — one-command reproduction.
+
+    python3 pyplot/plot_all.py
+
+Steps:
+  1. Configure + build the library and the trajectory dumper (CMake).
+  2. Run the dumper to write trajectories/*.csv for every benchmark.
+  3. Render one polished figure per benchmark plus a combined overview grid
+     (plots/benchmarks_overview.png).
+
+The plots show YABI's own trajectories across the canonical stiff test set
+(Hairer–Wanner §IV, STIFF DETEST): time series on linear/log axes, phase
+portraits for the oscillators, and a spatial snapshot for the reaction–diffusion
+problem. Reference values (scipy Radau / testbench) are marked with stars.
+"""
+import os
+import subprocess
+import sys
+
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TRAJ = os.path.join(ROOT, "trajectories")
+OUT = os.path.join(ROOT, "plots")
 os.makedirs(OUT, exist_ok=True)
 
-def parse_trajectory(csv_path, expected_cols):
-    traj = []
-    try:
-        with open(csv_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('t,') or line.startswith('PASS') or 'PASS' in line or 'FAIL' in line or 'ACCURACY' in line or line.startswith('y1('):
-                    continue
-                parts = line.split(',')
-                if len(parts) >= expected_cols:
-                    try:
-                        row = [float(p) for p in parts[:expected_cols]]
-                        traj.append(row)
-                    except ValueError:
-                        continue
-    except:
+PALETTE = ["#0d3b66", "#ee6c4d", "#3d5a80", "#98c1d9", "#e0a96d", "#2a9d8f",
+           "#e76f51", "#264653", "#e9c46a", "#6d597a", "#b56576", "#588157"]
+plt.rcParams.update({
+    "figure.dpi": 110,
+    "font.family": "DejaVu Sans",
+    "axes.titlesize": 10,
+    "axes.labelsize": 8,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "legend.fontsize": 6.5,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "grid.linewidth": 0.5,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+})
+
+
+def run(cmd):
+    print("  $ " + " ".join(cmd))
+    r = subprocess.run(cmd, cwd=ROOT)
+    if r.returncode != 0:
+        sys.exit(f"command failed: {' '.join(cmd)}")
+
+
+def build_and_dump():
+    print("== 1/3 build ==")
+    run(["cmake", "-S", ".", "-B", "build"])
+    run(["cmake", "--build", "build", "-j"])
+    print("== 2/3 dump trajectories ==")
+    run([os.path.join("build", "dump_trajectories")])
+
+
+# --- data --------------------------------------------------------------------
+def load(name):
+    path = os.path.join(TRAJ, name + ".csv")
+    if not os.path.exists(path):
         return None
-    if not traj: return None
-    return np.array(traj)
+    return np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
 
-def plot_brusselator():
-    traj = parse_trajectory("/tmp/plot_bruss_traj.csv", 3)
-    if traj is None: return
-    t,y1,y2 = traj[:,0],traj[:,1],traj[:,2]
-    fig,ax = plt.subplots(figsize=(7,4))
-    ax.plot(t,y1,'o-',label='BDF y1',markersize=4,color='#d62728')
-    ax.plot(t,y2,'s-',label='BDF y2',markersize=4,color='#1f77b4')
-    ax.scatter([5],[0.938299],color='red',s=150,marker='*',zorder=10,label='Testbench ref y1(5)=0.938299')
-    ax.scatter([5],[4.52728],color='blue',s=150,marker='*',zorder=10,label='Testbench ref y2(5)=4.52728')
-    ax.set_xlabel('t'); ax.set_ylabel('y')
-    ax.set_title('Brusselator (A=1,B=3, y0=[1,2]) — BDF vs testbench reference')
-    ax.legend(fontsize=7); ax.grid(True,alpha=0.3)
-    plt.tight_layout(); plt.savefig(os.path.join(OUT,"brusselator_curve.png"),dpi=150); plt.close(fig)
 
-def plot_robertson():
-    traj = parse_trajectory("/tmp/plot_robert_traj.csv", 4)
-    if traj is None: return
-    t,y1,y2,y3 = traj[:,0],traj[:,1],traj[:,2],traj[:,3]
-    fig,ax = plt.subplots(figsize=(8,5))
-    ax.semilogx(t,y1,'o-',label='BDF y1',markersize=5,color='#d62728')
-    ax.semilogx(t,y2,'s-',label='BDF y2',markersize=5,color='#1f77b4')
-    ax.semilogx(t,y3,'^-',label='BDF y3',markersize=5,color='#2ca02c')
-    ax.scatter([10000],[0.107300429907],color='red',s=150,marker='*',zorder=10,label='Testbench ref y1(10^4)=0.107300')
-    ax.scatter([10000],[4.800167041e-07],color='blue',s=150,marker='*',zorder=10,label='Testbench ref y2(10^4)=4.800e-07')
-    ax.scatter([10000],[0.892699090076],color='black',s=120,marker='*',zorder=10,label='Testbench ref y3(10^4)=0.892699')
-    ax.set_xlabel('t (log scale)'); ax.set_ylabel('y')
-    ax.set_title('Robertson — BDF vs Hairer-Wanner/testbench reference')
-    ax.legend(fontsize=7); ax.grid(True,alpha=0.3,which='both')
-    plt.tight_layout(); plt.savefig(os.path.join(OUT,"robertson_curve.png"),dpi=150); plt.close(fig)
+def species_colors(n):
+    return [colormaps["plasma"](i / max(n - 1, 1)) for i in range(n)]
 
-def plot_heat():
-    alpha = 0.01
-    t_curve = np.linspace(0, 50, 500)
-    y_ref = np.exp(-alpha*np.pi**2*t_curve)*np.sin(np.pi*0.5)
-    traj = parse_trajectory("/tmp/plot_heat_traj.csv", 2)
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(t_curve, y_ref, 'k-', linewidth=2, label='Analytical $e^{-\\alpha\\pi^2 t}\\sin(\\pi/2)$')
-    if traj is not None:
-        ax.plot(traj[:,0], traj[:,1], 'o-', color='red', markersize=3, label='BDF (MOL N=100)')
-    ax.set_xlabel('t'); ax.set_ylabel('$u(0.5,t)$')
-    ax.set_title('Heat Equation — BDF vs analytical')
-    ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
-    plt.tight_layout(); plt.savefig(os.path.join(OUT,"heat_curve.png"),dpi=150); plt.close(fig)
+
+# --- panels ------------------------------------------------------------------
+def panel_time(ax, name, title, ycols, logx=False, logy=False, labels=None, ref=None):
+    d = load(name)
+    if d is None:
+        ax.set_title(title); ax.text(0.5, 0.5, "no data", ha="center", va="center"); return
+    t = d[:, 0]
+    for k, c in enumerate(ycols):
+        ax.plot(t, d[:, c], lw=1.2, label=labels[k] if labels else f"$y_{c}$")
+    if logx: ax.set_xscale("log")
+    if logy: ax.set_yscale("log")
+    if ref:
+        for (tt, yy, lab) in ref:
+            ax.scatter([tt], [yy], marker="*", s=90, zorder=6, edgecolor="black",
+                       linewidth=0.4, label=lab)
+    ax.set_xlabel("t"); ax.set_title(title)
+    if labels: ax.legend(loc="best")
+
+
+def panel_phase(ax, name, title, xlab="$y_1$", ylab="$y_2$"):
+    d = load(name)
+    if d is None:
+        ax.set_title(title); ax.text(0.5, 0.5, "no data", ha="center", va="center"); return
+    ax.plot(d[:, 1], d[:, 2], lw=1.2, color=PALETTE[0])
+    ax.scatter([d[0, 1]], [d[0, 2]], color=PALETTE[0], s=40, zorder=5, label="start")
+    ax.scatter([d[-1, 1]], [d[-1, 2]], color=PALETTE[1], s=40, zorder=5, marker="s", label="end")
+    ax.set_xlabel(xlab); ax.set_ylabel(ylab); ax.set_title(title); ax.legend(loc="best")
+
+
+def panel_species(ax, name, title, n, logx=False, logy=False):
+    d = load(name)
+    if d is None:
+        ax.set_title(title); ax.text(0.5, 0.5, "no data", ha="center", va="center"); return
+    t = d[:, 0]
+    cols = species_colors(n)
+    for i in range(n):
+        ax.plot(t, d[:, 1 + i], lw=1.1, color=cols[i], label=f"$y_{i}$")
+    if logx: ax.set_xscale("log")
+    if logy: ax.set_yscale("log")
+    ax.set_xlabel("t"); ax.set_title(title)
+
+
+def panel_spatial(ax, name, title):
+    d = load(name)
+    if d is None:
+        ax.set_title(title); ax.text(0.5, 0.5, "no data", ha="center", va="center"); return
+    n = d.shape[1] - 1
+    node = np.arange(n)
+    times = [d[0, 0], d[len(d) // 2, 0], d[-1, 0]]
+    cols = [PALETTE[0], PALETTE[4], PALETTE[1]]
+    for tt, c in zip(times, cols):
+        row = d[np.argmin(np.abs(d[:, 0] - tt)), 1:]
+        ax.plot(node, row, lw=1.4, color=c, label=f"t={tt:.2g}")
+    ax.set_xlabel("node i"); ax.set_title(title); ax.legend(loc="best")
+
+
+# --- figures -----------------------------------------------------------------
+def make_overview():
+    fig, axes = plt.subplots(4, 3, figsize=(16, 11))
+    fig.suptitle("YABI — BDF integrator benchmark gallery", fontsize=16, fontweight="bold", y=0.98)
+
+    panel_time(axes[0, 0], "brusselator", "Brusselator (limit cycle, stiff)", [1, 2],
+               labels=["$y_1$", "$y_2$"],
+               ref=[(5, 0.938299, "ref y1(5)"), (5, 4.52728, "ref y2(5)")])
+    panel_time(axes[0, 1], "robertson", "Robertson (stiff, t→10⁴)", [1, 2, 3],
+               labels=["$y_1$", "$y_2$", "$y_3$"], logx=True,
+               ref=[(1e4, 0.1073004, "ref y1"), (1e4, 0.8926991, "ref y3")])
+    panel_phase(axes[0, 2], "vanderpol", "Van der Pol μ=1000 (relaxation limit cycle)")
+    panel_species(axes[1, 0], "hires", "HIRES (8-species photochemistry)", 8)
+    panel_time(axes[1, 1], "prothero_robinson", "Prothero–Robinson", [1, 2], labels=["$y_1$", "$y_2$"])
+    panel_time(axes[1, 2], "oregonator", "Oregonator (Belousov–Zhabotinsky)", [1, 2, 3],
+               labels=["$y_1$", "$y_2$", "$y_3$"], logy=True)
+    panel_phase(axes[2, 0], "pendulum", "Damped pendulum", xlab="$\\theta$", ylab="$\\omega$")
+    panel_spatial(axes[2, 1], "polanyi_wigner", "Polanyi–Wigner (reaction–diffusion, n=20)")
+    panel_species(axes[2, 2], "network", "Reaction network (6 species)", 6, logy=True)
+    panel_time(axes[3, 0], "e5", "E5 (stiff, t→10⁶)", [1, 2, 3], labels=["$y_1$", "$y_2$", "$y_3$"],
+               logx=True, logy=True)
+    panel_phase(axes[3, 1], "oscillator", "Harmonic oscillator", xlab="$y_1$", ylab="$y_2$")
+
+    ax = axes[3, 2]
+    ax.axis("off")
+    summary = (
+        "YABI — variable-order, variable-step BDF integrator\n"
+        "(orders 1–6) with forward / adjoint / simultaneous\n"
+        "sensitivity via CppAD.\n\n"
+        "Panels show YABI trajectories across the canonical\n"
+        "stiff test set (Hairer–Wanner §IV, STIFF DETEST).\n"
+        "★ marks the independently verified reference value\n"
+        "(scipy Radau / testbench).\n\n"
+        "Phase portraits (Van der Pol, pendulum, oscillator)\n"
+        "project the state; Robertson and E5 use log axes to\n"
+        "span 4–7 decades."
+    )
+    ax.text(0.0, 0.98, summary, va="top", ha="left", fontsize=9, linespacing=1.6)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(os.path.join(OUT, "benchmarks_overview.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote plots/benchmarks_overview.png")
+
+
+def make_individual():
+    specs = [
+        ("brusselator", "time", "Brusselator (limit cycle, stiff)", [1, 2]),
+        ("robertson", "time", "Robertson (stiff, t→10⁴)", [1, 2, 3]),
+        ("vanderpol", "phase", "Van der Pol μ=1000 (relaxation limit cycle)", None),
+        ("hires", "species", "HIRES (8-species photochemistry)", 8),
+        ("prothero_robinson", "time", "Prothero–Robinson", [1, 2]),
+        ("oregonator", "time", "Oregonator (Belousov–Zhabotinsky)", [1, 2, 3]),
+        ("pendulum", "phase", "Damped pendulum", None),
+        ("polanyi_wigner", "spatial", "Polanyi–Wigner (reaction–diffusion, n=20)", None),
+        ("network", "species", "Reaction network (6 species)", 6),
+        ("e5", "time", "E5 (stiff, t→10⁶)", [1, 2, 3]),
+        ("oscillator", "phase", "Harmonic oscillator", None),
+    ]
+    for name, kind, title, arg in specs:
+        fig, ax = plt.subplots(figsize=(6.5, 4))
+        if kind == "time":
+            panel_time(ax, name, title, arg, labels=[f"$y_{c}$" for c in arg])
+        elif kind == "phase":
+            panel_phase(ax, name, title)
+        elif kind == "species":
+            panel_species(ax, name, title, arg)
+        elif kind == "spatial":
+            panel_spatial(ax, name, title)
+        fig.tight_layout()
+        fig.savefig(os.path.join(OUT, f"{name}.png"), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+    print("wrote individual plots to plots/")
+
 
 if __name__ == "__main__":
-    plot_brusselator(); plot_robertson(); plot_heat()
-    print("Done")
-
-# Enhanced heat plot with error bars (overwrites previous)
-def plot_heat_with_errors():
-    alpha = 0.01
-    t_curve = np.linspace(0, 50, 500)
-    y_ref = np.exp(-alpha*np.pi**2*t_curve)*np.sin(np.pi*0.5)
-    traj = parse_trajectory("/tmp/plot_heat_traj.csv", 2)
-    if traj is None: return
-    t,y = traj[:,0], traj[:,1]
-    y_exact = np.exp(-alpha*np.pi**2*t)*np.sin(np.pi*0.5)
-    err = np.abs(y - y_exact)
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(t_curve, y_ref, 'k-', linewidth=2, label='Analytical')
-    ax.errorbar(t,y,yerr=err,fmt='o-',color='red',capsize=3,markersize=3,label='BDF (MOL N=100) with error')
-    ax.set_xlabel('t'); ax.set_ylabel('$u(0.5,t)$')
-    ax.set_title('Heat Equation — BDF with numerical error bars')
-    ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
-    plt.tight_layout(); plt.savefig(os.path.join(OUT,"heat_curve.png"),dpi=150); plt.close(fig)
-
-def plot_oscillator():
-    traj = parse_trajectory("/tmp/plot_osc_traj.csv", 3)
-    if traj is None: return
-    t,y1,y2 = traj[:,0],traj[:,1],traj[:,2]
-    t_ref = np.linspace(0,t[-1],500)
-    fig,ax = plt.subplots(figsize=(8,4))
-    ax.plot(t_ref,np.cos(t_ref),'k--',label='Analytical cos(t)',alpha=0.6)
-    ax.plot(t,y1,'o-',label='BDF y1',markersize=3,color='red')
-    ax.set_xlabel('t'); ax.set_ylabel('y1')
-    ax.set_title('Harmonic oscillator — BDF vs analytical')
-    ax.legend(); ax.grid(True,alpha=0.3)
-    plt.tight_layout(); plt.savefig(os.path.join(OUT,'oscillator_curve.png'),dpi=150); plt.close(fig)
-
-# Add call
-try:
-    pass
-except: pass
+    build_and_dump()
+    print("== 3/3 plot ==")
+    make_individual()
+    make_overview()
+    print("Done — see plots/benchmarks_overview.png")

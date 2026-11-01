@@ -98,6 +98,9 @@ if(YABI_BUILD_EXAMPLES)
         # Each example checks its own result and returns non-zero on failure.
         add_test(NAME example_${example} COMMAND yabi_${example})
     endforeach()
+    # Trajectory dumper for the benchmark gallery (utility, not a ctest).
+    add_executable(dump_trajectories examples/dump_trajectories.cpp)
+    target_link_libraries(dump_trajectories PRIVATE yabi)
 endif()
 
 # ---------------------------------------------------------------------------
