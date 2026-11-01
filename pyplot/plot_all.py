@@ -25,6 +25,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 
+# keep console output ordered when piped (subprocess writes are unbuffered)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRAJ = os.path.join(ROOT, "trajectories")
 OUT = os.path.join(ROOT, "plots")

@@ -40,4 +40,13 @@ done
 echo "========================================"
 echo "EXAMPLES DONE — $(date -Iseconds)"
 echo "========================================"
+
+# Benchmark gallery (trajectory dump + polished plots) — optional
+if [[ -x build/dump_trajectories ]] && command -v python3 >/dev/null 2>&1; then
+    echo "--- BENCHMARK GALLERY (python3 pyplot/plot_all.py) ---"
+    python3 pyplot/plot_all.py
+    echo "--- GALLERY OK ---"
+else
+    echo "SKIP: benchmark gallery (dump_trajectories or python3 not found)"
+fi
 exit 0

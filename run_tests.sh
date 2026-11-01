@@ -20,7 +20,7 @@ echo "COMMAND: cmake --build build -j$(nproc)"
 cmake --build build -j"$(nproc)"
 
 echo "=== 3. QUICK BINARY CHECKS (full output) ==="
-for b in build/yabi_basic build/yabi_nonautonomous build/yabi_sensitivity_demo build/yabi_test_20_brusselator_sensitivity; do
+for b in build/yabi_basic build/yabi_nonautonomous build/yabi_sensitivity_demo build/yabi_test_20_brusselator_sensitivity build/yabi_test_28_second_order_sensitivity; do
     echo "--- RUNNING $(basename $b) ---"
     if [[ -x "$b" ]]; then
         echo "COMMAND: $b"
