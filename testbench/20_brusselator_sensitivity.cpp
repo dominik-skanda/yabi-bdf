@@ -1,5 +1,6 @@
-// T12 — Brusselator sensitivity (fwd/rev/sim) — gate verification
+// T12a — Brusselator sensitivity (fwd/rev/sim) — gate verification
 #include <yabi/bdf_integrator.hpp>
+#include <cppad/cppad.hpp>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -7,48 +8,64 @@
 #include <limits>
 
 int main() {
-    std::cout << "=== T12 Sensitivity: Brusselator ===" << std::endl;
+    std::cout << "=== T12a Brusselator sensitivity (fwd/rev/sim) ===" << std::endl;
+    constexpr unsigned N = 2;
     CppAD::ADFun<double> rhs;
-    CppAD::vector<CppAD::AD<double>> x(2);
+    CppAD::vector<CppAD::AD<double>> x(N);
     x[0] = 1.0; x[1] = 2.0;
     CppAD::Independent(x);
-    CppAD::vector<CppAD::AD<double> > f(2);
-    f[0] = 1.0 + x[0]*x[0]*x[1] - (3.0+1.0)*x[0];
+    CppAD::vector<CppAD::AD<double>> f(N);
+    f[0] = 1.0 + x[0]*x[0]*x[1] - 4.0*x[0];   // A=1, B=3
     f[1] = 3.0*x[0] - x[0]*x[0]*x[1];
-    rhs.Dependent(x,f);
-    rhs.optimize();
-    const unsigned int N=2,P=2;
-    double y0[2]={1.0,2.0}; double p[2]={1.0,3.0};
-    double abs_err[2]={1e-10,1e-10}; const double T=5.0;
-    bool ok=true;
+    rhs.Dependent(x, f); rhs.optimize();
+
+    double y0[N] = {1.0, 2.0};
+    double abs_err[N] = {1e-10, 1e-10};
+    const double T = 5.0;
+    bool ok = true;
+
     // Forward
     {
-        yabi::BDFIntegrator<double> i1(rhs); double seed[2]={1,0}, pseed[2]={0,0};
-        if (!i1.resetIntegration(y0,5.0,1e-12,abs_err,true,false,NULL,NULL,NULL,NULL,0) ||
-            !i1.performIntegration(T,1000000) || !i1.forward(1,seed,pseed,false)) { std::cerr<<"FAIL fwd\n"; ok=false; }
-        else { double dir[2]; i1.getForwardSolutionVector(dir); std::cout<<"FWD ok dir="<<dir[0]<<","<<dir[1]<<std::endl; }
+        yabi::BDFIntegrator<double> it(rhs);
+        double seed[N] = {1.0, 0.0};
+        if (!it.resetIntegration(y0, 0.0, NULL, 0.1, 1e-10, abs_err, true, false, NULL,NULL,NULL,NULL,0) ||
+            !it.performIntegration(T, 1000000) || !it.forward(1, seed, NULL, false)) { std::cerr << "FAIL fwd\n"; ok = false; }
+        else { double dir[N]; it.getForwardSolutionVector(dir);
+               if (!std::isfinite(dir[0]) || !std::isfinite(dir[1])) ok = false;
+               std::cout << "FWD dir=(" << dir[0] << "," << dir[1] << ")" << std::endl; }
     }
     // Reverse
     {
-        yabi::BDFIntegrator<double> i1(rhs); double w[2]={1,0};
-        if (!i1.resetIntegration(y0,5.0,1e-12,abs_err,true,false,NULL,NULL,NULL,NULL,0) ||
-            !i1.performIntegration(T,1000000) || !i1.reverse(1,w)) { std::cerr<<"FAIL rev\n"; ok=false; }
-        else { double* adj_sp[2]; double* adj_p[2]; for(int i=0;i<2;i++){adj_sp[i]=new double[1]; adj_p[i]=new double[1];}
-            if(i1.getReverseSolutionVector(adj_sp,adj_p)){ std::cout<<"REV ok adj="<<adj_sp[0][0]<<","<<adj_sp[1][0]<<std::endl; } else ok=false;
-            for(int i=0;i<2;i++){delete[] adj_sp[i]; delete[] adj_p[i];}
-        }
+        yabi::BDFIntegrator<double> it(rhs);
+        double w[N] = {1.0, 0.0};
+        if (!it.resetIntegration(y0, 0.0, NULL, 0.1, 1e-10, abs_err, true, false, NULL,NULL,NULL,NULL,0) ||
+            !it.performIntegration(T, 1000000) || !it.reverse(1, w)) { std::cerr << "FAIL rev\n"; ok = false; }
+        else { double* adj[N]; for (unsigned i=0;i<N;i++) adj[i] = new double[1];
+               if (!it.getReverseSolutionVector(adj, NULL)) ok = false;
+               else { if (!std::isfinite(adj[0][0]) || !std::isfinite(adj[1][0])) ok = false;
+                      std::cout << "REV adj=(" << adj[0][0] << "," << adj[1][0] << ")" << std::endl; }
+               for (unsigned i=0;i<N;i++) delete[] adj[i]; }
     }
-    // Simultaneous
+    // Simultaneous (real path, ndir=N)
     {
-        const unsigned int ndir=N+P; std::vector<double> yseed(ndir*N,0), pseed(ndir*P,0);
-        std::vector<double*> yptr(ndir), pptr(ndir); std::vector<double> abserr(ndir*2,1e-10);
-        std::vector<std::array<double,2>> abs_vec(ndir); for(auto&a:abs_vec)a={1e-10,1e-10};
+        const unsigned ndir = N;
+        std::vector<double> yseed(ndir*N, 0.0);
+        std::vector<double*> yptr(ndir);
+        std::vector<double> rel_arr(ndir, 1e-10);
+        std::vector<std::array<double,N>> abs_arr(ndir);
         std::vector<double*> absptr(ndir);
-        for(unsigned d=0;d<ndir;d++){ if(d<N) yseed[d*N+d]=1.0; else pseed[d*P+(d-N)]=1.0; yptr[d]=&yseed[d*N]; pptr[d]=&pseed[d*P]; absptr[d]=abs_vec[d].data(); }
-        yabi::BDFIntegrator<double> i1(rhs);
-        if(!i1.resetIntegration(y0,5.0,1e-12,abs_err,true,false,NULL,NULL,NULL,NULL,0) ||
-           !i1.performIntegration(T,1000000)) { std::cerr<<"FAIL sim\n"; ok=false; }
-        else { std::cout<<"SIM ok (forward+reverse in sequence)"<<std::endl; }
+        for (unsigned d=0; d<ndir; d++) { yseed[d*N+d] = 1.0; yptr[d] = &yseed[d*N];
+                                          for (unsigned i=0;i<N;i++) abs_arr[d][i]=abs_err[i];
+                                          absptr[d] = abs_arr[d].data(); }
+        yabi::BDFIntegrator<double> it(rhs);
+        if (!it.resetIntegration(y0, 0.0, NULL, 0.1, 1e-10, abs_err, false, false, yptr.data(), NULL, rel_arr.data(), absptr.data(), ndir) ||
+            !it.performIntegration(T, 1000000)) { std::cerr << "FAIL sim\n"; ok = false; }
+        else { std::vector<std::array<double,N>> dirs(ndir); std::vector<double*> dptr(ndir);
+               for (unsigned d=0; d<ndir; d++) dptr[d] = dirs[d].data();
+               if (!it.getSimultaniousDerivativesVector(dptr.data())) ok = false;
+               else { for (unsigned d=0; d<ndir; d++) for (unsigned i=0;i<N;i++) if (!std::isfinite(dirs[d][i])) ok=false;
+                      std::cout << "SIM d/dy0[0]=(" << dirs[0][0] << "," << dirs[0][1] << ") d/dy0[1]=(" << dirs[1][0] << "," << dirs[1][1] << ")" << std::endl; } }
     }
-    std::cout << (ok?"PASS":"FAIL") << std::endl; return ok?0:1;
+    std::cout << (ok ? "PASS" : "FAIL") << std::endl;
+    return ok ? 0 : 1;
 }

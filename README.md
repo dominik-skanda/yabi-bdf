@@ -141,6 +141,18 @@ but is not an accuracy knob. Control accuracy with `rtol`/`atol`; because the
 controller changes order as the step cap changes, the error is not monotone in
 `max_StepLength` (measured examples in `testbench/README.md`).
 
+### Step-controller adaptation (stability)
+
+The step controller is the original 2011 BDF algorithm with one small, deliberate
+addition for stability: on a rejected step it estimates the local truncation error at the
+next-lower order (from the highest Nordsieck term) and reduces the order when that gives a
+smaller or already-acceptable error. This DASSL/LSODE-style order reduction lets the
+integrator recover from stiff-oscillatory problems — e.g. the Oregonator's relaxation
+oscillations, where high-order BDF is unstable at *any* step size. It is a **no-op for
+well-behaved problems** (they accept on the first attempt, so no order reduction ever fires),
+and each reduction is recorded in the sensitivity tape so forward/reverse replays reconstruct
+the correct order sequence.
+
 ## Sensitivity API
 
 ### Forward mode
@@ -198,6 +210,27 @@ integrator.getSimultaniousDerivativesVector(solution_derivatives);
 
 `examples/sensitivity_demo.cpp` demonstrates all three modes and checks them
 against central finite differences.
+
+### Second-order (forward / reverse)
+
+`forward` and `reverse` take an `order` argument. Order `q` is computed
+incrementally: CppAD's `Forward(q)` needs the lower Taylor orders first, so to
+obtain the second-order directional derivative you run order 1 first:
+
+```cpp
+integrator.forward(1, seed, pseed, true);
+integrator.forward(1, seed, pseed, false);
+integrator.forward(2, seed, pseed, true);
+integrator.forward(2, seed, pseed, false);
+integrator.getForwardSolutionVector(dir2);   // d^2 y / d seed^2
+
+integrator.reverse(2, weights);              // 2nd-order adjoint
+integrator.getReverseSolutionVector(adj_sp, adj_p);   // adj_sp[i][1] = 2nd-order
+```
+
+A direct `forward(2)` without a prior `forward(1)` is not valid. The
+`testbench/28_second_order_sensitivity.cpp` driver verifies second order against
+the exact analytical solution of `y' = y²`.
 
 ## Tests
 
