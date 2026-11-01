@@ -254,6 +254,7 @@ template <class Scalar> class BDFIntegrator {
     unsigned int order_corrector_tape;
     bool taping;
     bool getTAPE;
+    unsigned int lastForwardOrder;
     Scalar *P_tape;
     int *ip_tape;
     long *scaling_D1_tape;

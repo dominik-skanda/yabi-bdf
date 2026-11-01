@@ -221,6 +221,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
     deleteOldTape();
     intermediateCppADFunIterator = cppADFunList.begin();
     getTAPE = false;
+    lastForwardOrder = 0;
 
     if (start_CppAD_tape == NULL) {
         if (intermediateCppADFunIterator == cppADFunList.end()) {

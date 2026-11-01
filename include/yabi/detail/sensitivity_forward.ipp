@@ -159,8 +159,9 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
         return false;
     }
 
-    if (reset)
+    if (reset || order != lastForwardOrder)
         getTAPE = false;
+    lastForwardOrder = order;
 
     if (getTAPE == false) {
         getTAPE = true;
@@ -204,6 +205,13 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
                 cppAD_argument[numOfSpecies + 1 + i] = parameter_seed[i];
 
         CppAD::vector<Scalar> df(numOfSpecies);
+        if (order > 1 && start_CppAD_tape->size_order() < order) {
+            YABI_LOG_ERROR("forward(order=", order, ") requested, but the replay tape only stores ",
+                           start_CppAD_tape->size_order(),
+                           " Taylor order(s). CppAD Forward(q) is incremental: call forward(1), forward(2), ... "
+                           "in ascending order first (e.g. forward(1, ...) before forward(2, ...)).");
+            return false;
+        }
         df = start_CppAD_tape->Forward(order, cppAD_argument);
 
         for (i = 0; i < numOfSpecies; i++) {
