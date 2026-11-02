@@ -176,6 +176,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(CppAD::ADFun<Sca
     rejectedNewtonSteps = 0;
     updateJacobian = 0;
     updateP = 0;
+    newtonIterations = 0;
 }
 
 template <typename Scalar>
@@ -258,6 +259,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     rejectedNewtonSteps = 0;
     updateJacobian = 0;
     updateP = 0;
+    newtonIterations = 0;
 
     return true;
 }
@@ -355,6 +357,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     rejectedNewtonSteps = 0;
     updateJacobian = 0;
     updateP = 0;
+    newtonIterations = 0;
 
     return true;
 }
@@ -457,6 +460,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     rejectedNewtonSteps = 0;
     updateJacobian = 0;
     updateP = 0;
+    newtonIterations = 0;
 
     return true;
 }

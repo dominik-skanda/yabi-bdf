@@ -184,6 +184,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     };
 
     while (newtonIterate <= MAXNEWTONITERATION) {
+        newtonIterations++;
         if (setJacobian && !wasJacobianSet) {
             updateJacobian++;
             wasJacobianSet = true;

@@ -106,6 +106,35 @@ template <class Scalar> class BDFIntegrator {
         return true;
     };
 
+    // ---- Diagnostics (programmatic; the quantities printStatistic and the
+    // step/order controller already track, exposed as read-only getters) ----
+
+    // BDF order of the last accepted step (1..MAXORDER).
+    unsigned int getCurrentOrder() const { return order_corrector; }
+
+    // Step size of the last accepted step (== the size of the next step).
+    Scalar getCurrentStepSize() const { return step_size_h; }
+
+    // Total nonlinear (Newton) iterations performed across the integration.
+    unsigned int getNewtonIterations() const { return newtonIterations; }
+
+    // Accepted / rejected step counters.
+    unsigned int getAcceptedSteps() const { return acceptedSteps; }
+    unsigned int getRejectedSteps() const { return rejectedSteps; }
+    unsigned int getRejectedNewtonSteps() const { return rejectedNewtonSteps; }
+
+    // Number of Jacobian (re)evaluations.  Each is a full J assembly.
+    unsigned int getJacobianEvaluations() const { return updateJacobian; }
+
+    // Number of Newton-matrix (P) updates performed from a *reused* Jacobian
+    // (i.e. P re-formed and re-factorized without reassembling J).
+    unsigned int getMatrixPUpdates() const { return updateP; }
+
+    // Total number of Newton-matrix (LU) factorizations.  Every Jacobian
+    // assembly re-forms and factorizes P, and every P-only update factorizes
+    // again, so the total is updateJacobian + updateP.
+    unsigned int getFactorizations() const { return updateJacobian + updateP; }
+
   private:
     bool setSimultaneousDerivatives(Scalar **y_seed_derivatives_, Scalar **p_seed_derivatives_,
                                     Scalar *relative_error_derivatives_,
@@ -327,6 +356,7 @@ template <class Scalar> class BDFIntegrator {
     unsigned int rejectedNewtonSteps;
     unsigned int updateJacobian;
     unsigned int updateP;
+    unsigned int newtonIterations;
 };
 
 } // namespace yabi
