@@ -513,7 +513,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         delete[] root_derivatives;
                         delete[] convergenceResidual_derivatives;
                     }
-                    // DIRECT SIMULTANIOUS MODE
+                    // DIRECT SIMULTANEOUS MODE
 
                     if (numOfDerivatives > 0 && direct) {
                         CppAD::vector<Scalar> df(numOfSpecies);
@@ -567,7 +567,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                                 for (i = 0; i < numOfSpecies; i++) {
                                     if (std::isnan(df[i]) || std::isinf(df[i])) {
                                         YABI_LOG_ERROR("element of jacobian is nan or inf! (direct "
-                                                       "sensitivities simultanious1)");
+                                                       "sensitivities simultaneous1)");
 
                                         internalError = true;
                                         releaseDirect();
@@ -856,7 +856,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                                 for (i = 0; i < numOfSpecies; i++) {
                                     if (std::isnan(df[i]) || std::isinf(df[i])) {
                                         YABI_LOG_ERROR("element of jacobian is nan or inf! (direct "
-                                                       "sensitivities simultanious2)");
+                                                       "sensitivities simultaneous2)");
 
                                         internalError = true;
                                         releaseDirect();

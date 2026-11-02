@@ -207,8 +207,8 @@ void fill_simultaneous(CppAD::ADFun<double>& model, const State& y0,
     std::vector<std::array<double, N> > dir(ndir);
     std::vector<double*> dir_ptr(ndir);
     for (unsigned int d = 0; d < ndir; ++d) dir_ptr[d] = dir[d].data();
-    if (!integrator.getSimultaniousDerivativesVector(dir_ptr.data())) {
-        std::cerr << "getSimultaniousDerivativesVector failed\n";
+    if (!integrator.getSimultaneousDerivativesVector(dir_ptr.data())) {
+        std::cerr << "getSimultaneousDerivativesVector failed\n";
         std::exit(2);
     }
 

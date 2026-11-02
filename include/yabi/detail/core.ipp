@@ -647,7 +647,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionVector(Scalar 
 }
 
 template <typename Scalar>
-bool BDFIntegrator<Scalar>::getSimultaniousDerivativesVector(
+bool BDFIntegrator<Scalar>::getSimultaneousDerivativesVector(
     Scalar **solution_Vector_derivatives_) {
     unsigned int i, z;
     for (z = 0; z < numOfDerivatives; z++)
@@ -887,7 +887,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
         z_corrector = NULL;
     }
 
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
 
     if (error_weights_derivatives != NULL) {
         for (i = 0; i < numOfDerivatives; i++)

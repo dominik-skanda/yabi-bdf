@@ -62,7 +62,7 @@ int main() {
             !it.performIntegration(T, 1000000)) { std::cerr << "FAIL sim\n"; ok=false; }
         else { std::vector<std::array<double,N>> dirs(ndir); std::vector<double*> dptr(ndir);
                for (unsigned d=0; d<ndir; d++) dptr[d]=dirs[d].data();
-               if (!it.getSimultaniousDerivativesVector(dptr.data())) ok=false;
+               if (!it.getSimultaneousDerivativesVector(dptr.data())) ok=false;
                else { for (unsigned d=0; d<ndir; d++) for (unsigned i=0;i<N;i++) if (!std::isfinite(dirs[d][i])) ok=false;
                       std::cout << "SIM d/dy0[0]=(" << dirs[0][0] << "," << dirs[0][1] << ")" << std::endl; } }
     }

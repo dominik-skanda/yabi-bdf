@@ -205,7 +205,7 @@ integrator.resetIntegration(y0, t0, p, max_step, rel_error, abs_error,
                             false, false, y_seeds, p_seeds, &rel_seed,
                             abs_seeds, ndir);
 integrator.performIntegration(t_end, max_steps);
-integrator.getSimultaniousDerivativesVector(solution_derivatives);
+integrator.getSimultaneousDerivativesVector(solution_derivatives);
 ```
 
 `examples/sensitivity_demo.cpp` demonstrates all three modes and checks them

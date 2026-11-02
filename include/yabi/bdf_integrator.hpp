@@ -62,7 +62,7 @@ template <class Scalar> class BDFIntegrator {
                           unsigned int numOfderivatives); // time dependent and parameter dependent
     bool performIntegration(const Scalar t_ende, unsigned int max_StepSize);
     bool getSolutionVector(Scalar *solution_Vector);
-    bool getSimultaniousDerivativesVector(Scalar **solution_Vector_derivatives);
+    bool getSimultaneousDerivativesVector(Scalar **solution_Vector_derivatives);
     bool getForwardSolutionVector(Scalar *forward_solution_Vector);
     bool getReverseSolutionVector(Scalar **solution_adjoint_species,
                                   Scalar **solution_adjoint_parameter);
@@ -134,7 +134,7 @@ template <class Scalar> class BDFIntegrator {
     Scalar *z_corrector;
     Scalar *z_corrector_old;
 
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
     Scalar **z_predictor_derivatives;
     Scalar **z_corrector_derivatives;
     Scalar **z_corrector_derivatives_old;
@@ -155,29 +155,29 @@ template <class Scalar> class BDFIntegrator {
     Scalar l_i[7];
 
     Scalar *corrector;
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
     Scalar **corrector_derivatives;
 
     Scalar *corrector_old;
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
     Scalar **corrector_old_derivatives;
 
     Scalar *error_weights;
     Scalar *absolut_error;
     Scalar relative_error;
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
     Scalar **error_weights_derivatives;
     Scalar **absolut_error_derivatives;
     Scalar *relative_error_derivatives;
 
     Scalar t_ende;
     Scalar *solution_Vector;
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
     Scalar **solution_Vector_derivatives;
 
     Scalar minimalEta;
 
-    // Simultanous Derivatives
+    // Simultaneous Derivatives
 
     Scalar c_n_old;
     Scalar max_StepLength;

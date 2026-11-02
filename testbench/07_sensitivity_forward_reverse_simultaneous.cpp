@@ -85,7 +85,7 @@ int main() {
             std::vector<std::array<double,2> > dirs(ndir);
             std::vector<double*> dirptr(ndir);
             for(unsigned int d=0;d<ndir;d++) dirptr[d]=dirs[d].data();
-            if (!integrator.getSimultaniousDerivativesVector(dirptr.data())) { std::cerr << "FAIL sim get\n"; ok=false; }
+            if (!integrator.getSimultaneousDerivativesVector(dirptr.data())) { std::cerr << "FAIL sim get\n"; ok=false; }
             else {
                 std::cout << "SIM d/dy0[0]=[" << dirs[0][0]<<","<<dirs[0][1]<<"] d/dp[0]=[" << dirs[2][0]<<","<<dirs[2][1]<<"]" << std::endl;
             }
