@@ -681,6 +681,43 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionVector(Scalar 
     return true;
 }
 
+template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionAt(Scalar t,
+                                                                   Scalar *solution_Vector_at_t) {
+    if (internalError)
+        return false;
+    if (!isIntegrattionPerformed) {
+        YABI_LOG_ERROR("getSolutionAt: integration has not been performed yet!");
+
+        return false;
+    }
+
+    // The Nordsieck interpolant is anchored at the last accepted time t_i[1]
+    // with the last step size step_size_h:
+    //     y(t) = sum_j z_corrector[n*j + i] * theta^j,   theta = (t - t_i[1]) / step_size_h.
+    // It is only accurate within the completed step theta in [-1, 0].
+    const Scalar theta = (t - t_i[1]) / step_size_h;
+    if (theta < -1.0 - 4.0 * MACHINEPRECISION || theta > 4.0 * MACHINEPRECISION) {
+        YABI_LOG_ERROR("getSolutionAt: t = ", t, " is outside the last step [",
+                       t_i[1] - step_size_h, ", ", t_i[1], "]!");
+
+        return false;
+    }
+
+    unsigned int i, j;
+    Scalar temp[7];
+    for (i = 0; i <= order_corrector; i++) {
+        temp[i] = 1.0;
+        for (j = 0; j < i; j++)
+            temp[i] *= theta;
+    }
+
+    int blasTEMP = order_corrector + 1;
+    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector, numOfSpecies, temp, blasONE,
+                    blasScalarZERO, solution_Vector_at_t, blasONE);
+
+    return true;
+}
+
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::getSimultaneousDerivativesVector(
     Scalar **solution_Vector_derivatives_) {

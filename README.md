@@ -149,6 +149,14 @@ integrator.performIntegration(2.0, 100000);
 integrator.getSolutionVector(y);
 ```
 
+Dense output: `getSolutionAt(t, y)` evaluates the continuous extension at any `t`
+inside the last accepted step `[t_end - h, t_end]` (it returns `false` outside):
+
+```cpp
+double h = integrator.getCurrentStepSize();   // last step size
+integrator.getSolutionAt(2.0 - 0.5 * h, y);   // interpolate inside the last step
+```
+
 The seven trailing sensitivity-seed arguments can be replaced by a
 `yabi::IntegrationOptions` struct (defaults reproduce the `false, false,
 nullptr, …, 0` tail):

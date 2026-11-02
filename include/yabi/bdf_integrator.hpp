@@ -85,6 +85,10 @@ template <class Scalar> class BDFIntegrator {
                           const IntegrationOptions<Scalar> &options); // time + parameter
     bool performIntegration(const Scalar t_ende, unsigned int max_StepSize);
     bool getSolutionVector(Scalar *solution_Vector);
+    // Dense output: evaluate the Nordsieck interpolant at t, which must lie
+    // within the last accepted step [t_i[1] - step_size_h, t_i[1]].  Returns
+    // false (and logs) if integration has not run or t is outside that step.
+    bool getSolutionAt(Scalar t, Scalar *solution_Vector_at_t);
     bool getSimultaneousDerivativesVector(Scalar **solution_Vector_derivatives);
     bool getForwardSolutionVector(Scalar *forward_solution_Vector);
     bool getReverseSolutionVector(Scalar **solution_adjoint_species,
