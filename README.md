@@ -23,6 +23,33 @@ sensitivity analysis through CppAD automatic differentiation.
   and LAPACK linear solves.
 - **C++17**, BLAS/LAPACK, and an external CppAD installation.
 
+## Quick Verification
+
+Prove tolerance adherence, first-order convergence, and second-order sensitivity
+in one command. This regenerates the work–precision diagram
+(`work_precision_diagram.png`) and prints the slope summary plus the
+second-order sensitivity output locally.
+
+```sh
+cmake -S . -B build && cmake --build build -j
+python3 reproduce_benchmarks.py
+```
+
+`reproduce_benchmarks.py` runs two self-checking testbench binaries and parses
+their output:
+
+- `build/yabi_test_11_tolerance_and_order` — the work–precision proof (tolerance
+  adherence + first-order step convergence).
+- `build/yabi_test_28_second_order_sensitivity` — exact second-order forward and
+  reverse sensitivities.
+
+Plotting requires `matplotlib` (the build and the two binaries themselves do
+not):
+
+```sh
+pip install matplotlib
+```
+
 ## Dependencies
 
 | Dependency | Notes |
@@ -33,6 +60,7 @@ sensitivity analysis through CppAD automatic differentiation.
 | SuiteSparse (UMFPACK/KLU) | Optional, for sparse linear solvers via the pluggable `LinearSolver` interface. |
 | C++17 compiler | GCC or Clang. |
 | CMake ≥ 3.16 | Build only. |
+| matplotlib | Optional. Only for `reproduce_benchmarks.py`'s work–precision plot (and `pyplot/plot_all.py`). |
 
 CppAD is distributed under EPL-2.0 with a GPL-2.0-or-later secondary license.
 BLAS and LAPACK are BSD-style. YABI itself is Apache-2.0.
