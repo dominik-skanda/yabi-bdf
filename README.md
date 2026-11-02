@@ -121,6 +121,29 @@ integrator.performIntegration(2.0, 100000);
 integrator.getSolutionVector(y);
 ```
 
+The seven trailing sensitivity-seed arguments can be replaced by a
+`yabi::IntegrationOptions` struct (defaults reproduce the `false, false,
+nullptr, …, 0` tail):
+
+```cpp
+yabi::IntegrationOptions<double> opts;             // taping=false, direct=false,
+integrator.resetIntegration(y0, 0.1, 1e-10, abs_error, opts);  // seeds=nullptr, numOfderivatives=0
+```
+
+For sensitivity, fill the fields and pass the same struct to any of the three
+overloads (autonomous / time / time+parameter):
+
+```cpp
+opts.taping = false;
+opts.direct = false;
+opts.y_seed_list              = yseed_ptr.data();   // double** (per-direction state seeds)
+opts.p_seed_list              = pseed_ptr.data();   // double** (per-direction parameter seeds)
+opts.relative_error_derivatives = rel_err.data();   // double*  (per-direction rel. tol)
+opts.absolut_error_derivatives   = abs_ptr.data();  // double** (per-direction abs. tol)
+opts.numOfderivatives         = ndir;
+integrator.resetIntegration(y0, t0, p, max_step, 1e-10, abs_error, opts);
+```
+
 The RHS type is inferred from the dimensions of the CppAD tape:
 
 | Tape domain | Tape range | Meaning |

@@ -180,6 +180,37 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(CppAD::ADFun<Sca
 }
 
 template <typename Scalar>
+bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar max_StepLength,
+                                             Scalar relative_error, Scalar *absolut_error,
+                                             const IntegrationOptions<Scalar> &options) {
+    return resetIntegration(y_start, max_StepLength, relative_error, absolut_error, options.taping,
+                            options.direct, options.y_seed_list, options.p_seed_list,
+                            options.relative_error_derivatives, options.absolut_error_derivatives,
+                            options.numOfderivatives);
+}
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar T_start, Scalar max_StepLength,
+                                             Scalar relative_error, Scalar *absolut_error,
+                                             const IntegrationOptions<Scalar> &options) {
+    return resetIntegration(y_start, T_start, max_StepLength, relative_error, absolut_error,
+                            options.taping, options.direct, options.y_seed_list, options.p_seed_list,
+                            options.relative_error_derivatives, options.absolut_error_derivatives,
+                            options.numOfderivatives);
+}
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar T_start, Scalar *parameter,
+                                             Scalar max_StepLength, Scalar relative_error,
+                                             Scalar *absolut_error,
+                                             const IntegrationOptions<Scalar> &options) {
+    return resetIntegration(y_start, T_start, parameter, max_StepLength, relative_error,
+                            absolut_error, options.taping, options.direct, options.y_seed_list,
+                            options.p_seed_list, options.relative_error_derivatives,
+                            options.absolut_error_derivatives, options.numOfderivatives);
+}
+
+template <typename Scalar>
 bool BDFIntegrator<Scalar>::resetIntegration(
     Scalar *y_start, Scalar max_StepLength_, Scalar relative_error_, Scalar *absolut_error_,
     bool taping_, bool direct_, Scalar **y_seed_derivatives_, Scalar **p_seed_derivatives_,

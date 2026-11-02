@@ -31,8 +31,8 @@ int main() {
     double absolute_error[1] = {1e-12};
     double y[1];
 
-    if (!integrator.resetIntegration(y_start, 0.1, 1e-10, absolute_error, false,
-                                     false, NULL, NULL, NULL, NULL, 0) ||
+    if (!integrator.resetIntegration(y_start, 0.1, 1e-10, absolute_error,
+                                     yabi::IntegrationOptions<double>()) ||
         !integrator.performIntegration(2.0, 100000) ||
         !integrator.getSolutionVector(y)) {
         std::cerr << "integration failed\n";

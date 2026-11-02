@@ -78,7 +78,15 @@ int main() {
             absptr[d]=abs_err_arr[d].data();
         }
         yabi::BDFIntegrator<double> integrator(rhs);
-        if (!integrator.resetIntegration(y0,0.0,p,0.1,1e-12,abs_err,false,false,yseed_ptr.data(),pseed_ptr.data(),rel_err_arr.data(),absptr.data(),ndir) ||
+        yabi::IntegrationOptions<double> opts;
+        opts.taping = false;
+        opts.direct = false;
+        opts.y_seed_list = yseed_ptr.data();
+        opts.p_seed_list = pseed_ptr.data();
+        opts.relative_error_derivatives = rel_err_arr.data();
+        opts.absolut_error_derivatives = absptr.data();
+        opts.numOfderivatives = ndir;
+        if (!integrator.resetIntegration(y0, 0.0, p, 0.1, 1e-12, abs_err, opts) ||
             !integrator.performIntegration(T,1000000)) {
             std::cerr << "FAIL sim int\n"; ok=false;
         } else {

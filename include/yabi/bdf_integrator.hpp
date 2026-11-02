@@ -39,6 +39,19 @@
 
 namespace yabi {
 
+// Optional sensitivity/seed configuration for resetIntegration.  Defaults
+// reproduce the common "no sensitivity" tail
+// (..., false, false, NULL, NULL, NULL, NULL, 0).
+template <typename Scalar> struct IntegrationOptions {
+    bool taping = false;
+    bool direct = false;
+    Scalar **y_seed_list = nullptr;
+    Scalar **p_seed_list = nullptr;
+    Scalar *relative_error_derivatives = nullptr;
+    Scalar **absolut_error_derivatives = nullptr;
+    unsigned int numOfderivatives = 0;
+};
+
 template <class Scalar> class BDFIntegrator {
     typedef std::list<CppAD::ADFun<Scalar> *> cppADFunListType;
 
@@ -60,6 +73,16 @@ template <class Scalar> class BDFIntegrator {
                           bool taping, bool direct, Scalar **y_seed_list, Scalar **p_seed_list,
                           Scalar *relative_error_derivatives, Scalar **absolut_error_derivatives,
                           unsigned int numOfderivatives); // time dependent and parameter dependent
+    // Additive convenience overloads: the same three signatures with the seven
+    // trailing sensitivity-seed arguments replaced by a single options struct.
+    bool resetIntegration(Scalar *y_start, Scalar max_StepLength, Scalar relative_error,
+                          Scalar *absolut_error, const IntegrationOptions<Scalar> &options); // autonom
+    bool resetIntegration(Scalar *y_start, Scalar T_start, Scalar max_StepLength,
+                          Scalar relative_error, Scalar *absolut_error,
+                          const IntegrationOptions<Scalar> &options); // time dependent
+    bool resetIntegration(Scalar *y_start, Scalar T_start, Scalar *parameter,
+                          Scalar max_StepLength, Scalar relative_error, Scalar *absolut_error,
+                          const IntegrationOptions<Scalar> &options); // time + parameter
     bool performIntegration(const Scalar t_ende, unsigned int max_StepSize);
     bool getSolutionVector(Scalar *solution_Vector);
     bool getSimultaneousDerivativesVector(Scalar **solution_Vector_derivatives);
