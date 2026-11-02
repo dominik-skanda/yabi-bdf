@@ -531,7 +531,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         if (eta_q_minus * step_size_h > max_StepLength)
             eta_q_minus = max_StepLength / step_size_h;
 
-        if (eta_q < eta_q_minus && order_corrector > 1) {
+        if (eta_q < eta_q_minus && order_corrector > MINORDER) {
             if (eta_q_minus < eta_q_plus && order_corrector < MAXORDER) {
                 for (i = 0; i < numOfSpecies; i++)
                     for (j = order_corrector + 1; j < 7; j++)
@@ -613,7 +613,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                 num_of_steps_per_order = 0;
                 isOrderDown = true;
             }
-        } else if (eta_q < eta_q_plus && order_corrector < MAXORDER) {
+        } else if ((eta_q < eta_q_plus || order_corrector < MINORDER) && order_corrector < MAXORDER) {
             for (i = 0; i < numOfSpecies; i++)
                 for (j = order_corrector + 1; j < 7; j++)
                     z_corrector[numOfSpecies * j + i] = 0.0;

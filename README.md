@@ -195,10 +195,18 @@ time, and which error-weight norm to use. All four arguments are validated
 before any state is changed.
 
 `max_order` is a **cap**, not a forced order: the controller chooses the order
-actually used and does not expose it. Likewise `max_StepLength` caps the step
-but is not an accuracy knob. Control accuracy with `rtol`/`atol`; because the
+actually used. Use `getCurrentOrder()` to read it. Likewise `max_StepLength` caps
+the step but is not an accuracy knob. Control accuracy with `rtol`/`atol`; because the
 controller changes order as the step cap changes, the error is not monotone in
 `max_StepLength` (measured examples in `testbench/README.md`).
+
+To **force** a fixed order (e.g. for per-order convergence measurement), use
+`setFixedOrder(q)`:
+
+```cpp
+integrator.setFixedOrder(4);        // pin the order to 4 (ramps up 1..4, then stays)
+integrator.getCurrentOrder();       // read the order actually used
+```
 
 ### Step-controller adaptation (stability)
 
@@ -306,16 +314,18 @@ the exact analytical solution of `y' = y²`.
 9. Van der Pol oscillator (parameter-dependent form),
 10. failure-path regression: an invalid error weight must be rejected,
 11. tolerance adherence across eight decades of `rtol`, plus first-order step
-    convergence with `MAXORDER = 1`.
+    convergence with `MAXORDER = 1`,
+12. per-order convergence for orders 2–6, forced via `setFixedOrder(q)` (slope
+    ≈ `q` measured at two step caps).
 
 All of them check their result against an independent reference solution.
 Run them with `make testbench` or `ctest`; `ctest` also registers the three
 self-checking examples (`example_basic`, `example_nonautonomous`,
 `example_sensitivity_demo`).
 
-See `testbench/README.md` for what is deliberately not claimed: a per-order
-convergence test for orders 2-6, because `MAXORDER` is a cap and the chosen
-order is not exposed by the public API.
+See `testbench/README.md` for the measured convergence slopes; the per-order
+convergence test for orders 2–6 is now expressible via `setFixedOrder` +
+`getCurrentOrder` (`testbench/32_fixed_order.cpp`).
 
 ## License
 

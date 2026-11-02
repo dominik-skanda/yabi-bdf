@@ -153,6 +153,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(CppAD::ADFun<Sca
     MAXNEWTONITERATION = 3;
 
     MAXORDER = 6;
+    MINORDER = 1;
     MACHINEPRECISION = std::numeric_limits<Scalar>::epsilon();
     HITSOLUTION = false;
     updateEveryP = false;
@@ -848,6 +849,19 @@ bool BDFIntegrator<Scalar>::setAlgorithmSettings(unsigned int MAXORDER_, Scalar 
     MACHINEPRECISION = MACHINEPRECISION_;
     HITSOLUTION = HITSOLUTION_;
     ERROR_WEIGHTS_INDEX = ERROR_WEIGHTS_INDEX_;
+
+    return true;
+}
+
+template <typename Scalar> bool BDFIntegrator<Scalar>::setFixedOrder(unsigned int order) {
+    // Force a fixed BDF order: MINORDER == MAXORDER == order.  The integrator
+    // still starts at order 1 (reset sets order_corrector = 1) and ramps up to
+    // `order`; once there it can neither increase nor decrease.
+    if (!(0 < order && order < 7))
+        return false;
+
+    MINORDER = order;
+    MAXORDER = order;
 
     return true;
 }

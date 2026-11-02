@@ -10,13 +10,13 @@ This testbench implements canonical tests for BDF integrators including:
   eight decades, and tightening `rtol` must actually improve the result
 - First-order step convergence with `MAXORDER = 1`: halving `max_StepLength`
   halves the global error (observed slope 0.96)
+- Per-order convergence for orders 2–6, forced via `setFixedOrder(q)` (test
+  `32_fixed_order.cpp`): halving `max_StepLength` multiplies the global error by
+  `2^-q` (observed slopes ≈ 2.00 / 3.26 / 4.28 / 5.23 / 5.98 for q = 2..6)
 - Mass conservation checks where applicable
 
-What is deliberately NOT claimed: a per-order convergence test for orders 2-6.
-`setAlgorithmSettings(MAXORDER, ...)` only caps the order; the controller still
-chooses it, and the chosen order is not exposed by the public API. `MAXORDER=1`
-is the only order that is genuinely pinned, so it is the only slope asserted
-(test `11_tolerance_and_order.cpp`). Error versus `max_StepLength` is therefore
+The per-order convergence test is now expressible via `setFixedOrder(q)` +
+`getCurrentOrder()`. Error versus `max_StepLength` is therefore
 not monotone in general: at `rtol = 1e-4` the relative error measured over
 `t <= 3` was 2.2e-4 at `max_step = 0.05`, 2.0e-6 at 0.025, and 2.3e-3 at 0.0125.
 All of those stay inside the requested error envelope; the wobble is the order

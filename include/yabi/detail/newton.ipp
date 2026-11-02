@@ -1366,7 +1366,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         // from the highest Nordsieck term and, if dropping the order gives a smaller (or already
         // acceptable) error, reduce the order instead of only shrinking the step. The reduction is
         // recorded in the tape (orderDOWN marker below) so the sensitivity replay reconstructs it.
-        if (order_corrector > 1) {
+        if (order_corrector > MINORDER) {
             Scalar c_down = -1.0;
             for (i = 0; i < order_corrector - 1; i++)
                 c_down *= stepSizeSet_new[i] / step_size_h;

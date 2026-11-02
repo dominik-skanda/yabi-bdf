@@ -104,6 +104,10 @@ template <class Scalar> class BDFIntegrator {
                            unsigned int MAXNEWTONITERATION, bool updateEveryP);
     bool setAlgorithmSettings(unsigned int MAXORDER, Scalar MACHINEPRECISION, bool HITSOLUTION,
                               unsigned int ERROR_WEIGHTS_INDEX);
+    // Force a fixed BDF order (1..6): sets both MINORDER and MAXORDER to q, so
+    // the controller ramps up to q and then stays there (no increase above, no
+    // decrease below).  Call after (or instead of) setAlgorithmSettings.
+    bool setFixedOrder(unsigned int order);
     bool setRestrictOrderRatio(Scalar restrictRatioOrder1, Scalar restrictRatioOrder2,
                                Scalar restrictRatioOrder3, Scalar restrictRatioOrder4,
                                Scalar restrictRatioOrder5, Scalar restrictRatioOrder6);
@@ -362,6 +366,7 @@ template <class Scalar> class BDFIntegrator {
     unsigned int MAXNEWTONITERATION;
 
     unsigned int MAXORDER;
+    unsigned int MINORDER;
     Scalar MACHINEPRECISION;
     bool HITSOLUTION;
     unsigned int ERROR_WEIGHTS_INDEX;
