@@ -72,7 +72,7 @@ bool BDFIntegrator<Scalar>::setSimultaneousDerivatives(Scalar **y_seed_derivativ
             if (RHS_type == 2)
                 cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-            CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+            std::vector<Scalar> cppAD_argument(cppAD_argument_size);
             for (j = 0; j < numOfSpecies; j++)
                 cppAD_argument[j] = y_seed_derivatives[i][j];
 
@@ -83,7 +83,7 @@ bool BDFIntegrator<Scalar>::setSimultaneousDerivatives(Scalar **y_seed_derivativ
                 for (j = 0; j < sizeOfParameter; j++)
                     cppAD_argument[numOfSpecies + 1 + j] = p_seed_derivatives[i][j];
 
-            CppAD::vector<Scalar> df(numOfSpecies);
+            std::vector<Scalar> df(numOfSpecies);
             df = RHS->Forward(1, cppAD_argument);
 
             for (j = 0; j < numOfSpecies; j++) {
@@ -225,8 +225,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
 
     if (start_CppAD_tape == NULL) {
         if (intermediateCppADFunIterator == cppADFunList.end()) {
-            CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-            (*tempADFun) = (*RHS);
+            AbstractRHS<Scalar> *tempADFun = RHS->clone();
             tempADFun->capacity_order(MINTAYLOR);
             cppADFunList.push_back(tempADFun);
             intermediateCppADFunIterator--;
@@ -251,7 +250,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
     if (RHS_type == 2)
         cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-    CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+    std::vector<Scalar> cppAD_argument(cppAD_argument_size);
 
     for (i = 0; i < numOfSpecies; i++)
         cppAD_argument[i] = z_corrector[i];

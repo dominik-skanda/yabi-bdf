@@ -174,7 +174,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
             solution_adjoint_parameter[i][k] = 0.0;
     }
 
-    CppAD::vector<Scalar> w(numOfSpecies * order);
+    std::vector<Scalar> w(numOfSpecies * order);
     unsigned int cppAD_argument_size = 0;
 
     if (RHS_type == 0)
@@ -183,7 +183,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
         cppAD_argument_size = numOfSpecies + 1;
     if (RHS_type == 2)
         cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
-    CppAD::vector<Scalar> dw((cppAD_argument_size)*order);
+    std::vector<Scalar> dw((cppAD_argument_size)*order);
 
     // perform reverse mode
     while (adjointIntermediatePointer != NULL) {
@@ -381,7 +381,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 if (RHS_type == 2)
                     cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-                CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+                std::vector<Scalar> cppAD_argument(cppAD_argument_size);
 
                 for (j = 0; j < numOfSpecies; j++)
                     cppAD_argument[j] = adjointIntermediatePointer->endSolution[j];
@@ -393,8 +393,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                         cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-                    (*tempADFun) = (*RHS);
+                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
                     tempADFun->capacity_order(MINTAYLOR);
                     cppADFunList.push_back(tempADFun);
                     intermediateCppADFunIterator--;
@@ -405,7 +404,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 adjointIntermediatePointer->direct_fun->Forward(0, cppAD_argument);
                 for (j = 0; j < cppAD_argument_size; j++)
                     cppAD_argument[j] = 0.0;
-                CppAD::vector<Scalar> df(numOfSpecies);
+                std::vector<Scalar> df(numOfSpecies);
                 for (j = 0; j < numOfSpecies; j++) {
                     cppAD_argument[j] = 1.;
                     df = adjointIntermediatePointer->direct_fun->Forward(1, cppAD_argument);
@@ -495,7 +494,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 if (RHS_type == 2)
                     cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-                CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+                std::vector<Scalar> cppAD_argument(cppAD_argument_size);
 
                 for (j = 0; j < numOfSpecies; j++)
                     cppAD_argument[j] = adjointIntermediatePointer->old_y_seed[j];

@@ -60,7 +60,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
     if (argumentSize == 0)
         return false;
 
-    CppAD::vector<Scalar> y_start(argumentSize);
+    std::vector<Scalar> y_start(argumentSize);
     for (i = 0; i < numOfSpecies; i++)
         y_start[i] = z_corrector[i];
     if (RHS_type >= 1)
@@ -69,13 +69,13 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
         for (i = 0; i < sizeOfParameter; i++)
             y_start[numOfSpecies + 1 + i] = parameter[i];
 
-    CppAD::vector<Scalar> rhs(numOfSpecies);
+    std::vector<Scalar> rhs(numOfSpecies);
     rhs = RHS->Forward(0, y_start);
 
     // Jacobian F_y(y_start,t_start,p)
-    CppAD::vector<Scalar> J(numOfSpecies * numOfSpecies);
-    CppAD::vector<Scalar> dx(argumentSize);
-    CppAD::vector<Scalar> df(numOfSpecies);
+    std::vector<Scalar> J(numOfSpecies * numOfSpecies);
+    std::vector<Scalar> dx(argumentSize);
+    std::vector<Scalar> df(numOfSpecies);
     for (j = 0; j < argumentSize; j++)
         dx[j] = 0.0;
     for (j = 0; j < numOfSpecies; j++) {
@@ -88,14 +88,14 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
 
     // Second derivative of the solution:
     // y'' = F_y * F + F_t  (F_t is zero for autonomous systems).
-    CppAD::vector<Scalar> y_ddot(numOfSpecies);
+    std::vector<Scalar> y_ddot(numOfSpecies);
     for (i = 0; i < numOfSpecies; i++) {
         y_ddot[i] = 0.0;
         for (j = 0; j < numOfSpecies; j++)
             y_ddot[i] += J[i * numOfSpecies + j] * rhs[j];
     }
     if (RHS_type >= 1) {
-        CppAD::vector<Scalar> dx_time(argumentSize);
+        std::vector<Scalar> dx_time(argumentSize);
         for (j = 0; j < argumentSize; j++)
             dx_time[j] = 0.0;
         dx_time[numOfSpecies] = 1.0;
@@ -686,7 +686,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         endTAPE->updatedTaylorFunction = false;
         endTAPE->lastTaylorOrder = 0;
 
-        endTAPE->CppAD_tape = new CppAD::ADFun<Scalar> *[MAXNEWTONITERATION];
+        endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
         for (j = 0; j < MAXNEWTONITERATION; j++)
             endTAPE->CppAD_tape[j] = NULL;
         endTAPE->ip = NULL;
@@ -760,7 +760,7 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
         endTAPE->updatedTaylorFunction = false;
         endTAPE->lastTaylorOrder = 0;
 
-        endTAPE->CppAD_tape = new CppAD::ADFun<Scalar> *[MAXNEWTONITERATION];
+        endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
         for (j = 0; j < MAXNEWTONITERATION; j++)
             endTAPE->CppAD_tape[j] = NULL;
         endTAPE->ip = NULL;

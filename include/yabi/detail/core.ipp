@@ -27,13 +27,12 @@
 
 namespace yabi {
 
-template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(CppAD::ADFun<Scalar> &RHS_) {
+template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_) {
     unsigned int i;
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
 
-    RHS = new CppAD::ADFun<Scalar>();
-    *RHS = RHS_;
+    RHS = RHS_.clone();
 
     if (RHS->Domain() < RHS->Range()) {
         YABI_LOG_ERROR("right hand side not properly set!");
@@ -249,10 +248,10 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     start_integration_time = 0.0;
     t_i[1] = 0.0;
     estimateStartStepsize();
-    CppAD::vector<Scalar> y_start_(numOfSpecies);
+    std::vector<Scalar> y_start_(numOfSpecies);
     for (i = 0; i < numOfSpecies; i++)
         y_start_[i] = y_start[i];
-    CppAD::vector<Scalar> rhs(numOfSpecies);
+    std::vector<Scalar> rhs(numOfSpecies);
     rhs = RHS->Forward(0, y_start_);
     t_i[0] = step_size_h;
     for (i = 0; i < numOfSpecies; i++)
@@ -347,12 +346,12 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     if (RHS_type == 1)
         cppAD_argument_size = numOfSpecies + 1;
 
-    CppAD::vector<Scalar> y_start_(cppAD_argument_size);
+    std::vector<Scalar> y_start_(cppAD_argument_size);
     for (i = 0; i < numOfSpecies; i++)
         y_start_[i] = y_start[i];
     if (RHS_type == 1)
         y_start_[numOfSpecies] = T_start;
-    CppAD::vector<Scalar> rhs(numOfSpecies);
+    std::vector<Scalar> rhs(numOfSpecies);
     rhs = RHS->Forward(0, y_start_);
 
     for (i = 0; i < numOfSpecies; i++)
@@ -446,7 +445,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     if (RHS_type == 2)
         cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-    CppAD::vector<Scalar> y_start_(cppAD_argument_size);
+    std::vector<Scalar> y_start_(cppAD_argument_size);
     for (i = 0; i < numOfSpecies; i++)
         y_start_[i] = y_start[i];
     if (RHS_type > 0)
@@ -455,7 +454,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
         for (i = 0; i < sizeOfParameter; i++)
             y_start_[numOfSpecies + 1 + i] = parameter[i];
     }
-    CppAD::vector<Scalar> rhs(numOfSpecies);
+    std::vector<Scalar> rhs(numOfSpecies);
     rhs = RHS->Forward(0, y_start_);
 
     for (i = 0; i < numOfSpecies; i++)
@@ -570,7 +569,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
             endTAPE->updatedTaylorFunction = false;
             endTAPE->lastTaylorOrder = 0;
 
-            endTAPE->CppAD_tape = new CppAD::ADFun<Scalar> *[MAXNEWTONITERATION];
+            endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
             for (j = 0; j < MAXNEWTONITERATION; j++)
                 endTAPE->CppAD_tape[j] = NULL;
             endTAPE->ip = NULL;
@@ -902,8 +901,7 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
         counter++;
     }
     for (i = counter + 1; i <= MINnumberADFunObjects; i++) {
-        CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-        (*tempADFun) = (*RHS);
+        AbstractRHS<Scalar> *tempADFun = RHS->clone();
         tempADFun->capacity_order(MINTAYLOR);
         cppADFunList.push_back(tempADFun);
     }

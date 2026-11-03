@@ -189,7 +189,7 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
         if (RHS_type == 2)
             cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-        CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+        std::vector<Scalar> cppAD_argument(cppAD_argument_size);
 
         time_tape = start_integration_time;
         for (i = 0; i < numOfSpecies; i++)
@@ -204,7 +204,7 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
             for (i = 0; i < sizeOfParameter; i++)
                 cppAD_argument[numOfSpecies + 1 + i] = parameter_seed[i];
 
-        CppAD::vector<Scalar> df(numOfSpecies);
+        std::vector<Scalar> df(numOfSpecies);
         if (order > 1 && start_CppAD_tape->size_order() < order) {
             YABI_LOG_ERROR("forward(order=", order, ") requested, but the replay tape only stores ",
                            start_CppAD_tape->size_order(),
@@ -367,7 +367,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
     if (RHS_type == 2)
         cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-    CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+    std::vector<Scalar> cppAD_argument(cppAD_argument_size);
     Scalar *b = new Scalar[numOfSpecies];
     Scalar *temp2 = new Scalar[numOfSpecies];
 
@@ -376,7 +376,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
         for (i = 0; i < numOfSpecies; i++)
             temp[i] = 0;
         for (i = 0; i < intermediateTAPE->NewtonIterates; i++) {
-            CppAD::vector<Scalar> rhs(numOfSpecies);
+            std::vector<Scalar> rhs(numOfSpecies);
             for (j = 0; j < numOfSpecies; j++)
                 cppAD_argument[j] = correctorVector_tape[j];
 
@@ -421,7 +421,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
         delete[] temp;
     } else {
         if (order != 0) {
-            CppAD::vector<Scalar> df(numOfSpecies);
+            std::vector<Scalar> df(numOfSpecies);
             Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
             int *ip_ = new int[numOfSpecies];
 
@@ -440,11 +440,10 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                     for (j = 0; j < sizeOfParameter; j++)
                         cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
 
-                CppAD::vector<Scalar> J_(numOfSpecies * numOfSpecies);
+                std::vector<Scalar> J_(numOfSpecies * numOfSpecies);
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-                    (*tempADFun) = (*RHS);
+                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
                     tempADFun->capacity_order(MINTAYLOR);
                     cppADFunList.push_back(tempADFun);
                     intermediateCppADFunIterator--;

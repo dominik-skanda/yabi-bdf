@@ -99,7 +99,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     if (RHS_type == 2)
         cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
-    CppAD::vector<Scalar> cppAD_argument(cppAD_argument_size);
+    std::vector<Scalar> cppAD_argument(cppAD_argument_size);
     Scalar *root = new Scalar[numOfSpecies];
 
     for (i = 0; i < numOfSpecies; i++)
@@ -144,7 +144,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         }
     }
 
-    CppAD::vector<Scalar> rhs(numOfSpecies);
+    std::vector<Scalar> rhs(numOfSpecies);
 
     if (!newtonIteration_Started) {
         setJacobian = true;
@@ -198,8 +198,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     cppAD_argument[numOfSpecies + 1 + i] = parameter[i];
             RHS->Forward(0, cppAD_argument);
 
-            CppAD::vector<Scalar> dx(cppAD_argument_size);
-            CppAD::vector<Scalar> df(numOfSpecies);
+            std::vector<Scalar> dx(cppAD_argument_size);
+            std::vector<Scalar> df(numOfSpecies);
             for (j = 0; j < cppAD_argument_size; j++)
                 dx[j] = 0.0;
             for (j = 0; j < numOfSpecies; j++) {
@@ -353,8 +353,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         if (taping && !direct) {
             if (endTAPE->CppAD_tape[newtonIterate - 1] == NULL) {
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-                    (*tempADFun) = (*RHS);
+                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
                     tempADFun->capacity_order(MINTAYLOR);
                     cppADFunList.push_back(tempADFun);
                     intermediateCppADFunIterator--;
@@ -517,7 +516,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     // DIRECT SIMULTANEOUS MODE
 
                     if (numOfDerivatives > 0 && direct) {
-                        CppAD::vector<Scalar> df(numOfSpecies);
+                        std::vector<Scalar> df(numOfSpecies);
                         Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
                         int *ip_ = new int[numOfSpecies];
 
@@ -543,13 +542,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (j = 0; j < sizeOfParameter; j++)
                                 cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
 
-                        CppAD::vector<Scalar> J_(numOfSpecies * numOfSpecies);
+                        std::vector<Scalar> J_(numOfSpecies * numOfSpecies);
 
                         if (taping) {
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                                    CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-                                    (*tempADFun) = (*RHS);
+                                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
                                     tempADFun->capacity_order(MINTAYLOR);
                                     cppADFunList.push_back(tempADFun);
                                     intermediateCppADFunIterator--;
@@ -806,7 +804,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     }
 
                     if (numOfDerivatives > 0 && direct) {
-                        CppAD::vector<Scalar> df(numOfSpecies);
+                        std::vector<Scalar> df(numOfSpecies);
                         Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
                         int *ip_ = new int[numOfSpecies];
 
@@ -832,13 +830,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (j = 0; j < sizeOfParameter; j++)
                                 cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
 
-                        CppAD::vector<Scalar> J_(numOfSpecies * numOfSpecies);
+                        std::vector<Scalar> J_(numOfSpecies * numOfSpecies);
 
                         if (taping) {
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                                    CppAD::ADFun<Scalar> *tempADFun = new CppAD::ADFun<Scalar>();
-                                    (*tempADFun) = (*RHS);
+                                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
                                     tempADFun->capacity_order(MINTAYLOR);
                                     cppADFunList.push_back(tempADFun);
                                     intermediateCppADFunIterator--;
@@ -1394,7 +1391,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                     marker->old_y_seed = NULL;
                     marker->updatedTaylorFunction = false;
                     marker->lastTaylorOrder = 0;
-                    marker->CppAD_tape = new CppAD::ADFun<Scalar> *[MAXNEWTONITERATION];
+                    marker->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
                     for (i = 0; i < MAXNEWTONITERATION; i++)
                         marker->CppAD_tape[i] = NULL;
                     marker->ip = NULL;

@@ -24,7 +24,8 @@
 #ifndef YABI_BDF_INTEGRATOR_HPP
     #define YABI_BDF_INTEGRATOR_HPP
 
-    #include <cppad/cppad.hpp>
+    #include <yabi/abstract_rhs.hpp>
+    #include <yabi/cppad_rhs.hpp>
 
     #include <cmath>
     #include <cstddef>
@@ -53,10 +54,12 @@ template <typename Scalar> struct IntegrationOptions {
 };
 
 template <class Scalar> class BDFIntegrator {
-    typedef std::list<CppAD::ADFun<Scalar> *> cppADFunListType;
+    typedef std::list<AbstractRHS<Scalar> *> cppADFunListType;
 
   public:
-    BDFIntegrator(CppAD::ADFun<Scalar> &RHS);
+    BDFIntegrator(const AbstractRHS<Scalar> &RHS);
+    // Convenience: wrap a CppAD ADFun (the historical constructor).
+    BDFIntegrator(CppAD::ADFun<Scalar> &RHS) : BDFIntegrator<Scalar>(CppADRHS<Scalar>(RHS)) {}
     ~BDFIntegrator();
     bool resetIntegration(Scalar *y_start, Scalar max_StepLength, Scalar relative_error,
                           Scalar *absolut_error, bool taping, bool direct, Scalar **y_seed_list,
@@ -172,7 +175,7 @@ template <class Scalar> class BDFIntegrator {
                                     Scalar **absolut_error_derivatives_,
                                     unsigned int numOfDerivatives_);
     bool freeSimultaneousDerivatives();
-    CppAD::ADFun<Scalar> *RHS;
+    AbstractRHS<Scalar> *RHS;
 
     // Pluggable linear solver (default DenseLUSolver). Mathematically identical
     // to original; allows future sparse solvers without changing Newton logic.
@@ -270,8 +273,8 @@ template <class Scalar> class BDFIntegrator {
     struct bdf_TAPE {
         Scalar timePoint;
         Scalar stepSize;
-        CppAD::ADFun<Scalar> **CppAD_tape;
-        CppAD::ADFun<Scalar> *direct_fun;
+        AbstractRHS<Scalar> **CppAD_tape;
+        AbstractRHS<Scalar> *direct_fun;
         Scalar *endSolution;
         Scalar *P;
         int *ip;
@@ -300,7 +303,7 @@ template <class Scalar> class BDFIntegrator {
 
     bool direct;
 
-    CppAD::ADFun<Scalar> *start_CppAD_tape;
+    AbstractRHS<Scalar> *start_CppAD_tape;
     Scalar *correctorVector_tape;
     Scalar startTape_stepSize;
 
