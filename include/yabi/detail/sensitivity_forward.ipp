@@ -443,12 +443,12 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                 std::vector<Scalar> J_(numOfSpecies * numOfSpecies);
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
-                    tempADFun->capacity_order(MINTAYLOR);
-                    cppADFunList.push_back(tempADFun);
+                    std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }
-                intermediateTAPE->direct_fun = (*intermediateCppADFunIterator);
+                intermediateTAPE->direct_fun = intermediateCppADFunIterator->get();
                 intermediateCppADFunIterator++;
 
                 intermediateTAPE->direct_fun->Forward(0, cppAD_argument);

@@ -32,7 +32,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
 
-    RHS = RHS_.clone();
+    RHS.reset(RHS_.clone());
 
     if (RHS->Domain() < RHS->Range()) {
         YABI_LOG_ERROR("right hand side not properly set!");
@@ -157,7 +157,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     HITSOLUTION = false;
     updateEveryP = false;
 
-    linearSolver = new DenseLUSolver<Scalar>();
+    linearSolver.reset(new DenseLUSolver<Scalar>());
     ERROR_WEIGHTS_INDEX = 1;
 
     MINTAYLOR = 1;
@@ -901,9 +901,9 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
         counter++;
     }
     for (i = counter + 1; i <= MINnumberADFunObjects; i++) {
-        AbstractRHS<Scalar> *tempADFun = RHS->clone();
+        std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
         tempADFun->capacity_order(MINTAYLOR);
-        cppADFunList.push_back(tempADFun);
+        cppADFunList.push_back(std::move(tempADFun));
     }
 
     return true;
@@ -917,10 +917,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     delete[] forward_solution_Vector;
     if (P_tape != NULL)
         delete[] P_tape;
-    if (linearSolver) {
-        delete linearSolver;
-        linearSolver = NULL;
-    }
+    linearSolver.reset();
     P_tape = NULL;
     if (ip_tape != NULL)
         delete[] ip_tape;
@@ -950,10 +947,6 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     delete[] ip;
     delete[] scaling_D1;
     delete[] scaling_D2;
-    if (linearSolver) {
-        delete linearSolver;
-        linearSolver = NULL;
-    }
     delete[] P;
     delete[] J;
     delete[] error_weights;
@@ -961,7 +954,6 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     delete[] solution_Vector;
     delete[] corrector_old;
     delete[] corrector;
-    delete RHS;
     if (z_predictor != NULL) {
         delete[] z_predictor;
         z_predictor = NULL;
@@ -1019,12 +1011,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     }
     solution_Vector_derivatives = NULL;
 
-    for (typename cppADFunListType::iterator it = cppADFunList.begin(); it != cppADFunList.end();
-         it++) {
-        delete (*it);
-        (*it) = NULL;
-    }
-    cppADFunList.resize(0);
+    cppADFunList.clear();
 
     if (reachableError_derivatives != NULL)
         delete[] reachableError_derivatives;

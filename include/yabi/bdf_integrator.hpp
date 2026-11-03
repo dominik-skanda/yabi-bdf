@@ -35,6 +35,7 @@
     #include <iostream>
     #include <limits>
     #include <list>
+    #include <memory>
     #include <string>
     #include <vector>
 
@@ -56,7 +57,7 @@ template <typename Scalar> struct IntegrationOptions {
 };
 
 template <class Scalar> class BDFIntegrator {
-    typedef std::list<AbstractRHS<Scalar> *> cppADFunListType;
+    typedef std::list<std::unique_ptr<AbstractRHS<Scalar>>> cppADFunListType;
 
   public:
     BDFIntegrator(const AbstractRHS<Scalar> &RHS);
@@ -124,15 +125,12 @@ template <class Scalar> class BDFIntegrator {
     // Set a custom linear solver (e.g. for future sparse support). The
     // integrator takes ownership of the passed solver.
     void setLinearSolver(LinearSolver<Scalar> *solver) {
-        if (linearSolver) {
-            delete linearSolver;
-        }
-        linearSolver = solver;
+        linearSolver.reset(solver);
         if (linearSolver) {
             linearSolver->initialize(numOfSpecies);
         }
     }
-    LinearSolver<Scalar> *getLinearSolver() const { return linearSolver; }
+    LinearSolver<Scalar> *getLinearSolver() const { return linearSolver.get(); }
 
     bool printStatistic(std::ostream &outstream = std::cout, std::string delim = " ") {
         outstream << "INTEGRATION STATISTIC:" << delim << " " << std::endl
@@ -179,11 +177,11 @@ template <class Scalar> class BDFIntegrator {
                                     Scalar **absolut_error_derivatives_,
                                     unsigned int numOfDerivatives_);
     bool freeSimultaneousDerivatives();
-    AbstractRHS<Scalar> *RHS;
+    std::unique_ptr<AbstractRHS<Scalar>> RHS;
 
     // Pluggable linear solver (default DenseLUSolver). Mathematically identical
     // to original; allows future sparse solvers without changing Newton logic.
-    LinearSolver<Scalar> *linearSolver;
+    std::unique_ptr<LinearSolver<Scalar>> linearSolver;
 
     inline bool calculate_next_predictor();
     bool calculate_corrector_vector();

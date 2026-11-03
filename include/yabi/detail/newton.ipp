@@ -353,12 +353,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         if (taping && !direct) {
             if (endTAPE->CppAD_tape[newtonIterate - 1] == NULL) {
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
-                    tempADFun->capacity_order(MINTAYLOR);
-                    cppADFunList.push_back(tempADFun);
+                    std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }
-                endTAPE->CppAD_tape[newtonIterate - 1] = (*intermediateCppADFunIterator);
+                endTAPE->CppAD_tape[newtonIterate - 1] = intermediateCppADFunIterator->get();
                 intermediateCppADFunIterator++;
             }
             rhs = endTAPE->CppAD_tape[newtonIterate - 1]->Forward(0, cppAD_argument);
@@ -547,12 +547,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         if (taping) {
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
-                                    tempADFun->capacity_order(MINTAYLOR);
-                                    cppADFunList.push_back(tempADFun);
+                                    std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
                                     intermediateCppADFunIterator--;
                                 }
-                                endTAPE->direct_fun = (*intermediateCppADFunIterator);
+                                endTAPE->direct_fun = intermediateCppADFunIterator->get();
                                 intermediateCppADFunIterator++;
                             }
 
@@ -835,12 +835,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         if (taping) {
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
-                                    tempADFun->capacity_order(MINTAYLOR);
-                                    cppADFunList.push_back(tempADFun);
+                                    std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
                                     intermediateCppADFunIterator--;
                                 }
-                                endTAPE->direct_fun = (*intermediateCppADFunIterator);
+                                endTAPE->direct_fun = intermediateCppADFunIterator->get();
                                 intermediateCppADFunIterator++;
                             }
 

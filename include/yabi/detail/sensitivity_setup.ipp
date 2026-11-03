@@ -225,12 +225,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
 
     if (start_CppAD_tape == NULL) {
         if (intermediateCppADFunIterator == cppADFunList.end()) {
-            AbstractRHS<Scalar> *tempADFun = RHS->clone();
-            tempADFun->capacity_order(MINTAYLOR);
-            cppADFunList.push_back(tempADFun);
+            std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
             intermediateCppADFunIterator--;
         }
-        start_CppAD_tape = (*intermediateCppADFunIterator);
+        start_CppAD_tape = intermediateCppADFunIterator->get();
         intermediateCppADFunIterator++;
     } else {
         YABI_LOG_ERROR("CREATE NEW TAPE FAILED!");

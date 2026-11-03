@@ -393,12 +393,12 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                         cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
-                    AbstractRHS<Scalar> *tempADFun = RHS->clone();
-                    tempADFun->capacity_order(MINTAYLOR);
-                    cppADFunList.push_back(tempADFun);
+                    std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
+    tempADFun->capacity_order(MINTAYLOR);
+    cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }
-                adjointIntermediatePointer->direct_fun = (*intermediateCppADFunIterator);
+                adjointIntermediatePointer->direct_fun = intermediateCppADFunIterator->get();
                 intermediateCppADFunIterator++;
 
                 adjointIntermediatePointer->direct_fun->Forward(0, cppAD_argument);
