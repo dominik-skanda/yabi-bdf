@@ -87,6 +87,23 @@ set_target_properties(yabi PROPERTIES
     SOVERSION 0
 )
 
+# Pure library: the same integrator core compiled without CppAD (YABI_NO_CPPAD
+# drops the cppad_rhs.hpp include and the CppAD::ADFun convenience constructor),
+# so a user_ode.hpp / UserODERHS consumer can build and run without <cppad/cppad.hpp>.
+add_library(yabi_pure src/bdf_integrator_pure.cpp)
+target_include_directories(yabi_pure
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_compile_definitions(yabi_pure PUBLIC YABI_NO_CPPAD)
+target_link_libraries(yabi_pure
+    PUBLIC
+        ${LAPACK_LIBRARIES}
+        ${BLAS_LIBRARIES}
+)
+set_target_properties(yabi_pure PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
@@ -107,11 +124,17 @@ endif()
 # Testbench
 # ---------------------------------------------------------------------------
 if(YABI_BUILD_TESTBENCH)
-    # Numbered tests
-    file(GLOB YABI_TEST_SOURCES CONFIGURE_DEPENDS testbench/[0-9]*.cpp)
-    # Manual/pure sensitivity tests always included
-    file(GLOB YABI_MANUAL_SOURCES CONFIGURE_DEPENDS testbench/manual_*.cpp testbench/pure_*.cpp)
-    list(APPEND YABI_TEST_SOURCES ${YABI_MANUAL_SOURCES})
+    # Numbered CppAD tests + manual sensitivity demos: these build an AD tape
+    # directly and therefore require CppAD (only built in the CppAD mode).
+    if(YABI_USE_CPPAD)
+        file(GLOB YABI_TEST_SOURCES CONFIGURE_DEPENDS testbench/[0-9]*.cpp testbench/manual_*.cpp)
+    else()
+        set(YABI_TEST_SOURCES)
+    endif()
+    # Pure (UserODERHS / user_ode.hpp) benchmarks: built in both modes; linked
+    # against yabi_pure (no CppAD) in the pure mode.
+    file(GLOB YABI_PURE_SOURCES CONFIGURE_DEPENDS testbench/pure_*.cpp)
+    list(APPEND YABI_TEST_SOURCES ${YABI_PURE_SOURCES})
     foreach(source ${YABI_TEST_SOURCES})
         get_filename_component(name ${source} NAME_WE)
         add_executable(yabi_test_${name} ${source})

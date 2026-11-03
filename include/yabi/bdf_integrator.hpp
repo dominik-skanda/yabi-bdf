@@ -25,7 +25,9 @@
     #define YABI_BDF_INTEGRATOR_HPP
 
     #include <yabi/abstract_rhs.hpp>
-    #include <yabi/cppad_rhs.hpp>
+    #ifndef YABI_NO_CPPAD
+        #include <yabi/cppad_rhs.hpp>
+    #endif
 
     #include <cmath>
     #include <cstddef>
@@ -58,8 +60,10 @@ template <class Scalar> class BDFIntegrator {
 
   public:
     BDFIntegrator(const AbstractRHS<Scalar> &RHS);
+    #ifndef YABI_NO_CPPAD
     // Convenience: wrap a CppAD ADFun (the historical constructor).
     BDFIntegrator(CppAD::ADFun<Scalar> &RHS) : BDFIntegrator<Scalar>(CppADRHS<Scalar>(RHS)) {}
+    #endif
     ~BDFIntegrator();
     bool resetIntegration(Scalar *y_start, Scalar max_StepLength, Scalar relative_error,
                           Scalar *absolut_error, bool taping, bool direct, Scalar **y_seed_list,

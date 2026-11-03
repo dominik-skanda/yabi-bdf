@@ -1,4 +1,5 @@
 build/
+build-pure/
 bin/
 build-cmake/
 cmake-build-*/
