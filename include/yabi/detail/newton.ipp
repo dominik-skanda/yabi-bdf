@@ -17,7 +17,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-// Newton iteration, Jacobian assembly and corrector acceptance.
+// Newton iteration, Jacobian assembly and corrector.data() acceptance.
 //
 // Generated from the reference implementation in YABI_old without changing any
 // expression: the bodies below are the original algorithm verbatim.
@@ -88,7 +88,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     error_multiplier *= l_i[1];
     error_multiplier = fabs(error_multiplier);
 
-    // Compute Matrix P
+    // Compute Matrix P.data()
 
     unsigned int cppAD_argument_size = 0;
 
@@ -105,7 +105,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     for (i = 0; i < numOfSpecies; i++)
         root[i] = z_predictor[i];
 
-    calculate_error_weights(error_weights, root, absolut_error, relative_error);
+    calculate_error_weights(error_weights.data(), root, absolut_error.data(), relative_error);
 
     Scalar *b = new Scalar[numOfSpecies];
     Scalar *temp = new Scalar[numOfSpecies];
@@ -226,7 +226,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     else
                         P[k * numOfSpecies + j] = -(step_size_h / l_i[1]) * J[j * numOfSpecies + k];
 
-            // LU factor (and overwrite) the matrix P and ip and jp via pluggable solver
+            // LU factor (and overwrite) the matrix P.data() and ip.data() and jp via pluggable solver
             if (!calculate_newton_scaling()) {
                 YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
@@ -240,14 +240,14 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     releaseWorkspace();
                     return false;
                 }
-                if (!linearSolver->factorize(P, ip, scaling_D1, scaling_D2, numOfSpecies)) {
+                if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(), scaling_D2.data(), numOfSpecies)) {
                     YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                     internalError = true;
                     releaseWorkspace();
                     return false;
                 }
             } else {
-                sign = linalg::GETRF(numOfSpecies, numOfSpecies, P, numOfSpecies, ip);
+                sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies, ip.data());
                 if (sign != 0) {
                     YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
                     internalError = true;
@@ -289,7 +289,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     else
                         P[k * numOfSpecies + j] = -(step_size_h / l_i[1]) * J[j * numOfSpecies + k];
 
-            // LU factor (and overwrite) the matrix P via pluggable solver
+            // LU factor (and overwrite) the matrix P.data() via pluggable solver
             if (!calculate_newton_scaling()) {
                 YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
@@ -303,14 +303,14 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     releaseWorkspace();
                     return false;
                 }
-                if (!linearSolver->factorize(P, ip, scaling_D1, scaling_D2, numOfSpecies)) {
+                if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(), scaling_D2.data(), numOfSpecies)) {
                     YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                     internalError = true;
                     releaseWorkspace();
                     return false;
                 }
             } else {
-                sign = linalg::GETRF(numOfSpecies, numOfSpecies, P, numOfSpecies, ip);
+                sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies, ip.data());
                 if (sign != 0) {
                     YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
                     internalError = true;
@@ -375,17 +375,17 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         linalg::SCAL(numOfSpecies, blasTEMP1, b, blasONE);
         linalg::AXPY(numOfSpecies, blasTEMP2, temp, blasONE, b, blasONE);
         linalg::AXPY(numOfSpecies, blasScalarONE, root, blasONE, b, blasONE);
-        linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor, blasONE, b, blasONE);
+        linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor.data(), blasONE, b, blasONE);
         for (j = 0; j < numOfSpecies; j++)
             b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
         if (linearSolver) {
-            sign = linearSolver->solve(P, ip, scaling_D1, scaling_D2, b, numOfSpecies, 1);
+            sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(), scaling_D2.data(), b, numOfSpecies, 1);
         } else {
             if (linearSolver) {
-                sign = linearSolver->solve(P, ip, scaling_D1, scaling_D2, b, numOfSpecies, 1);
+                sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(), scaling_D2.data(), b, numOfSpecies, 1);
             } else {
-                sign = linalg::GETRS_NT(numOfSpecies, blasONE, P, numOfSpecies, ip, b, numOfSpecies);
+                sign = linalg::GETRS_NT(numOfSpecies, blasONE, P.data(), numOfSpecies, ip.data(), b, numOfSpecies);
             }
         }
 
@@ -393,7 +393,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
 
         linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, root, blasONE);
-        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, corrector, blasONE);
+        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, corrector.data(), blasONE);
 
         if (numOfDerivatives > 0 && !direct) {
             for (z = 0; z < numOfDerivatives; z++) {
@@ -424,7 +424,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                 for (j = 0; j < numOfSpecies; j++)
                     b_derivatives[z][j] = -(Scalar)scalbn(b_derivatives[z][j], scaling_D1[j]);
 
-                sign = linearSolver->solve(P, ip, scaling_D1, scaling_D2, b_derivatives[z], numOfSpecies, 1);
+                sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(), scaling_D2.data(), b_derivatives[z], numOfSpecies, 1);
 
                 for (j = 0; j < numOfSpecies; j++)
                     temp[j] = (Scalar)scalbn(b_derivatives[z][j], scaling_D2[j]);
@@ -651,7 +651,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                                 P_[j * numOfSpecies + i] =
                                     (Scalar)scalbn(P_[j * numOfSpecies + i], scaling_D1_[i]);
 
-                        // LU factor (and overwrite) the matrix P and ip and jp
+                        // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                         int info;
                         info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
                         if (info != 0) {
@@ -939,7 +939,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                                 P_[j * numOfSpecies + i] =
                                     (Scalar)scalbn(P_[j * numOfSpecies + i], scaling_D1_[i]);
 
-                        // LU factor (and overwrite) the matrix P and ip and jp
+                        // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                         int info;
                         info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
                         if (info != 0) {
@@ -1101,7 +1101,7 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_cor
 
     int blasTEMP = order_corrector + 1;
     Scalar blasTEMP2 = 1.0;
-    linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, corrector, blasONE, l_i, blasONE, z_corrector,
+    linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, corrector.data(), blasONE, l_i, blasONE, z_corrector.data(),
                 numOfSpecies);
 
     if (numOfDerivatives > 0)
@@ -1157,8 +1157,8 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
     for (i = 0; i < numOfSpecies; i++)
         temp2[i] = z_predictor[i];
-    linalg::AXPY(numOfSpecies, blasScalarONE, corrector, blasONE, temp2, blasONE);
-    calculate_error_weights(error_weights, temp2, absolut_error, relative_error);
+    linalg::AXPY(numOfSpecies, blasScalarONE, corrector.data(), blasONE, temp2, blasONE);
+    calculate_error_weights(error_weights.data(), temp2, absolut_error.data(), relative_error);
     for (i = 0; i < numOfSpecies; i++)
         temp2[i] /= error_weights[i];
     reachableError =

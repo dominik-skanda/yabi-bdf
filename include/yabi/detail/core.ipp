@@ -54,48 +54,48 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
         RHS_type = 2;
         sizeOfParameter = RHS->Domain() - numOfSpecies - 1;
     }
-    parameter = new Scalar[sizeOfParameter];
-    corrector = new Scalar[numOfSpecies];
+    parameter.resize(sizeOfParameter);
+    corrector.resize(numOfSpecies);
 
-    z_corrector = NULL;
-    z_predictor = NULL;
-    z_corrector_old = NULL;
+    z_corrector.clear();
+    z_predictor.clear();
+    z_corrector_old.clear();
 
     for (i = 0; i < numOfSpecies; i++)
         corrector[i] = 1.0;
-    corrector_old = new Scalar[numOfSpecies];
-    error_weights = new Scalar[numOfSpecies];
-    absolut_error = new Scalar[numOfSpecies];
-    solution_Vector = new Scalar[numOfSpecies];
+    corrector_old.resize(numOfSpecies);
+    error_weights.resize(numOfSpecies);
+    absolut_error.resize(numOfSpecies);
+    solution_Vector.resize(numOfSpecies);
     for (i = 0; i < numOfSpecies; i++)
         solution_Vector[i] = 0;
 
     c_n_old = 1;
 
-    P = new Scalar[numOfSpecies * numOfSpecies];
-    J = new Scalar[numOfSpecies * numOfSpecies];
+    P.resize(numOfSpecies * numOfSpecies);
+    J.resize(numOfSpecies * numOfSpecies);
     newtonIteration_Started = false;
 
-    ip = new int[numOfSpecies];
+    ip.resize(numOfSpecies);
 
-    scaling_D1 = new long[numOfSpecies];
-    scaling_D2 = new long[numOfSpecies];
+    scaling_D1.resize(numOfSpecies);
+    scaling_D2.resize(numOfSpecies);
 
     startTAPE = NULL;
     intermediateTAPE = NULL;
     endTAPE = NULL;
 
     start_CppAD_tape = NULL;
-    z_predictor_tape = NULL;
-    z_corrector_tape = NULL;
-    correctorVector_tape = new Scalar[numOfSpecies];
+    z_predictor_tape.clear();
+    z_corrector_tape.clear();
+    correctorVector_tape.resize(numOfSpecies);
     internalError = false;
-    P_tape = NULL;
-    ip_tape = NULL;
-    scaling_D1_tape = NULL;
-    scaling_D2_tape = NULL;
+    P_tape.clear();
+    ip_tape.clear();
+    scaling_D1_tape.clear();
+    scaling_D2_tape.clear();
 
-    forward_solution_Vector = new Scalar[numOfSpecies];
+    forward_solution_Vector.resize(numOfSpecies);
     for (i = 0; i < numOfSpecies; i++)
         forward_solution_Vector[i] = 0;
     direct = false;
@@ -116,7 +116,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     absolut_error_derivatives = NULL;
     relative_error_derivatives = NULL;
 
-    reachableError_derivatives = NULL;
+    reachableError_derivatives.clear();
 
     adjointTapePointer = NULL;
 
@@ -181,9 +181,9 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
 
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar max_StepLength,
-                                             Scalar relative_error, Scalar *absolut_error,
+                                             Scalar relative_error, Scalar *absolut_error_,
                                              const IntegrationOptions<Scalar> &options) {
-    return resetIntegration(y_start, max_StepLength, relative_error, absolut_error, options.taping,
+    return resetIntegration(y_start, max_StepLength, relative_error, absolut_error_, options.taping,
                             options.direct, options.y_seed_list, options.p_seed_list,
                             options.relative_error_derivatives, options.absolut_error_derivatives,
                             options.numOfderivatives);
@@ -191,21 +191,21 @@ bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar max_StepLen
 
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar T_start, Scalar max_StepLength,
-                                             Scalar relative_error, Scalar *absolut_error,
+                                             Scalar relative_error, Scalar *absolut_error_,
                                              const IntegrationOptions<Scalar> &options) {
-    return resetIntegration(y_start, T_start, max_StepLength, relative_error, absolut_error,
+    return resetIntegration(y_start, T_start, max_StepLength, relative_error, absolut_error_,
                             options.taping, options.direct, options.y_seed_list, options.p_seed_list,
                             options.relative_error_derivatives, options.absolut_error_derivatives,
                             options.numOfderivatives);
 }
 
 template <typename Scalar>
-bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar T_start, Scalar *parameter,
+bool BDFIntegrator<Scalar>::resetIntegration(Scalar *y_start, Scalar T_start, Scalar *parameter_,
                                              Scalar max_StepLength, Scalar relative_error,
-                                             Scalar *absolut_error,
+                                             Scalar *absolut_error_,
                                              const IntegrationOptions<Scalar> &options) {
-    return resetIntegration(y_start, T_start, parameter, max_StepLength, relative_error,
-                            absolut_error, options.taping, options.direct, options.y_seed_list,
+    return resetIntegration(y_start, T_start, parameter_, max_StepLength, relative_error,
+                            absolut_error_, options.taping, options.direct, options.y_seed_list,
                             options.p_seed_list, options.relative_error_derivatives,
                             options.absolut_error_derivatives, options.numOfderivatives);
 }
@@ -224,14 +224,11 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     unsigned int i;
     max_StepLength = max_StepLength_;
     // Lege Nordsiek-Array an
-    if (z_corrector == NULL)
-        z_corrector = new Scalar[numOfSpecies * 7];
+    z_corrector.resize(numOfSpecies * 7);
 
-    if (z_corrector_old == NULL)
-        z_corrector_old = new Scalar[numOfSpecies * 7];
+    z_corrector_old.resize(numOfSpecies * 7);
 
-    if (z_predictor == NULL)
-        z_predictor = new Scalar[numOfSpecies * 7];
+    z_predictor.resize(numOfSpecies * 7);
 
     order_corrector = 1;
 
@@ -310,14 +307,11 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     max_StepLength = max_StepLength_;
     // Lege Nordsiek-Array an
 
-    if (z_corrector == NULL)
-        z_corrector = new Scalar[numOfSpecies * 7];
+    z_corrector.resize(numOfSpecies * 7);
 
-    if (z_corrector_old == NULL)
-        z_corrector_old = new Scalar[numOfSpecies * 7];
+    z_corrector_old.resize(numOfSpecies * 7);
 
-    if (z_predictor == NULL)
-        z_predictor = new Scalar[numOfSpecies * 7];
+    z_predictor.resize(numOfSpecies * 7);
 
     order_corrector = 1;
 
@@ -407,14 +401,11 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 
     // Lege Nordsiek-Array an
 
-    if (z_corrector == NULL)
-        z_corrector = new Scalar[numOfSpecies * 7];
+    z_corrector.resize(numOfSpecies * 7);
 
-    if (z_corrector_old == NULL)
-        z_corrector_old = new Scalar[numOfSpecies * 7];
+    z_corrector_old.resize(numOfSpecies * 7);
 
-    if (z_predictor == NULL)
-        z_predictor = new Scalar[numOfSpecies * 7];
+    z_predictor.resize(numOfSpecies * 7);
 
     order_corrector = 1;
 
@@ -638,7 +629,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
             if (!calculate_corrector_vector()) {
                 internalError = true;
 
-                YABI_LOG_ERROR("calculate corrector vector failed!");
+                YABI_LOG_ERROR("calculate corrector.data() vector failed!");
 
                 return false;
             }
@@ -712,7 +703,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionAt(Scalar t,
     }
 
     int blasTEMP = order_corrector + 1;
-    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector, numOfSpecies, temp, blasONE,
+    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector.data(), numOfSpecies, temp, blasONE,
                     blasScalarZERO, solution_Vector_at_t, blasONE);
 
     return true;
@@ -914,53 +905,53 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
 template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     unsigned int i;
 
-    delete[] forward_solution_Vector;
-    if (P_tape != NULL)
-        delete[] P_tape;
+    
+    if (!P_tape.empty())
+        
     linearSolver.reset();
-    P_tape = NULL;
-    if (ip_tape != NULL)
-        delete[] ip_tape;
-    ip_tape = NULL;
-    if (scaling_D1_tape != NULL)
-        delete[] scaling_D1_tape;
-    scaling_D1_tape = NULL;
-    if (scaling_D2_tape != NULL)
-        delete[] scaling_D2_tape;
-    scaling_D2_tape = NULL;
-    delete[] correctorVector_tape;
-    if (z_corrector_tape != NULL) {
-        delete[] z_corrector_tape;
-        z_corrector_tape = NULL;
+    P_tape.clear();
+    if (!ip_tape.empty())
+        
+    ip_tape.clear();
+    if (!scaling_D1_tape.empty())
+        
+    scaling_D1_tape.clear();
+    if (!scaling_D2_tape.empty())
+        
+    scaling_D2_tape.clear();
+    
+    if (!z_corrector_tape.empty()) {
+        
+        z_corrector_tape.clear();
     }
-    if (z_predictor_tape != NULL) {
-        delete[] z_predictor_tape;
-        z_predictor_tape = NULL;
+    if (!z_predictor_tape.empty()) {
+        
+        z_predictor_tape.clear();
     }
-    if (z_corrector_old != NULL) {
-        delete[] z_corrector_old;
-        z_corrector_old = NULL;
+    if (!z_corrector_old.empty()) {
+        
+        z_corrector_old.clear();
     }
 
     deleteOldTape();
-    delete[] parameter;
-    delete[] ip;
-    delete[] scaling_D1;
-    delete[] scaling_D2;
-    delete[] P;
-    delete[] J;
-    delete[] error_weights;
-    delete[] absolut_error;
-    delete[] solution_Vector;
-    delete[] corrector_old;
-    delete[] corrector;
-    if (z_predictor != NULL) {
-        delete[] z_predictor;
-        z_predictor = NULL;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    if (!z_predictor.empty()) {
+        
+        z_predictor.clear();
     }
-    if (z_corrector != NULL) {
-        delete[] z_corrector;
-        z_corrector = NULL;
+    if (!z_corrector.empty()) {
+        
+        z_corrector.clear();
     }
 
     // Simultaneous Derivatives
@@ -1013,8 +1004,8 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
 
     cppADFunList.clear();
 
-    if (reachableError_derivatives != NULL)
-        delete[] reachableError_derivatives;
+    if (!reachableError_derivatives.empty())
+        
 
     // adjoint
     if (solution_adjoint_species != NULL) {

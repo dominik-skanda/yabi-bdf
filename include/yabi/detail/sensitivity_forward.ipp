@@ -75,38 +75,38 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_pre
     switch (order_corrector_tape) {
     case 1:
         blasTEMP = 2;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A1, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A1, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     case 2:
         blasTEMP = 3;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A2, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A2, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     case 3:
         blasTEMP = 4;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A3, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A3, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     case 4:
         blasTEMP = 5;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A4, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A4, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     case 5:
         blasTEMP = 6;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A5, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A5, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     case 6:
         blasTEMP = 7;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape,
-                           numOfSpecies, A6, blasTEMP, blasScalarZERO, z_predictor_tape,
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector_tape.data(),
+                           numOfSpecies, A6, blasTEMP, blasScalarZERO, z_predictor_tape.data(),
                            numOfSpecies);
         break;
     }
@@ -121,8 +121,8 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_cor
             z_corrector_tape[j * numOfSpecies + i] = z_predictor_tape[j * numOfSpecies + i];
     int blasTEMP = order_corrector_tape + 1;
     Scalar blasTEMP2 = 1.0;
-    linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, correctorVector_tape, blasONE, l_i_tape, blasONE,
-                z_corrector_tape, numOfSpecies);
+    linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, correctorVector_tape.data(), blasONE, l_i_tape, blasONE,
+                z_corrector_tape.data(), numOfSpecies);
 
     return true;
 }
@@ -137,8 +137,8 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
     }
 
     int blasTEMP = order_corrector_tape + 1;
-    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector_tape, numOfSpecies, temp,
-                    blasONE, blasScalarZERO, forward_solution_Vector, blasONE);
+    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector_tape.data(), numOfSpecies, temp,
+                    blasONE, blasScalarZERO, forward_solution_Vector.data(), blasONE);
 
     delete[] temp;
     return true;
@@ -165,10 +165,9 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
 
     if (getTAPE == false) {
         getTAPE = true;
-        if (z_corrector_tape == NULL)
-            z_corrector_tape = new Scalar[numOfSpecies * 7];
-        if (z_predictor_tape == NULL) {
-            z_predictor_tape = new Scalar[numOfSpecies * 7];
+        z_corrector_tape.resize(numOfSpecies * 7);
+        if (z_predictor_tape.empty()) {
+            z_predictor_tape.resize(numOfSpecies * 7);
             for (i = 0; i < numOfSpecies; i++)
                 for (j = 0; j < 7; j++)
                     z_predictor_tape[j * numOfSpecies + i] = 0;
@@ -226,14 +225,10 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
         step_size_h_tape = startTape_stepSize;
 
         if (!direct) {
-            if (P_tape == NULL)
-                P_tape = new Scalar[numOfSpecies * numOfSpecies];
-            if (ip_tape == NULL)
-                ip_tape = new int[numOfSpecies];
-            if (scaling_D1_tape == NULL)
-                scaling_D1_tape = new long[numOfSpecies];
-            if (scaling_D2_tape == NULL)
-                scaling_D2_tape = new long[numOfSpecies];
+            P_tape.resize(numOfSpecies * numOfSpecies);
+            ip_tape.resize(numOfSpecies);
+            scaling_D1_tape.resize(numOfSpecies);
+            scaling_D2_tape.resize(numOfSpecies);
         }
         adjointTapePointer = NULL;
     }
@@ -278,7 +273,7 @@ bool BDFIntegrator<Scalar>::forward(unsigned int order, Scalar *y_seed, Scalar *
                 temp[i] = z_corrector_tape[order_corrector_tape * numOfSpecies + i];
             Scalar blasTEMP = -1.0;
             linalg::GER(numOfSpecies, order_corrector_tape, blasTEMP, temp, blasONE, d_i, blasONE,
-                        z_corrector_tape, numOfSpecies);
+                        z_corrector_tape.data(), numOfSpecies);
 
             order_corrector_tape -= 1;
             delete[] d_kahan;
@@ -402,17 +397,17 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
 
             linalg::SCAL(numOfSpecies, blasTEMP1, b, blasONE);
             linalg::AXPY(numOfSpecies, blasTEMP2, temp2, blasONE, b, blasONE);
-            linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_tape, blasONE, b, blasONE);
-            linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_tape, blasONE, b, blasONE);
+            linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_tape.data(), blasONE, b, blasONE);
+            linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_tape.data(), blasONE, b, blasONE);
             for (j = 0; j < numOfSpecies; j++)
                 b[j] = -(Scalar)scalbn(b[j], scaling_D1_tape[j]);
 
-            linalg::GETRS_NT(numOfSpecies, blasONE, P_tape, numOfSpecies, ip_tape, b, numOfSpecies);
+            linalg::GETRS_NT(numOfSpecies, blasONE, P_tape.data(), numOfSpecies, ip_tape.data(), b, numOfSpecies);
 
             for (j = 0; j < numOfSpecies; j++)
                 temp2[j] = (Scalar)scalbn(b[j], scaling_D2_tape[j]);
 
-            linalg::AXPY(numOfSpecies, blasScalarONE, temp2, blasONE, correctorVector_tape,
+            linalg::AXPY(numOfSpecies, blasScalarONE, temp2, blasONE, correctorVector_tape.data(),
                          blasONE);
             linalg::AXPY(numOfSpecies, blasScalarONE, temp2, blasONE, temp, blasONE);
         }
@@ -515,7 +510,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                         P_[j * numOfSpecies + i] = (Scalar)scalbn(P_[j * numOfSpecies + i],
                                                                   intermediateTAPE->scaling_D1[i]);
 
-                // LU factor (and overwrite) the matrix P and ip and jp
+                // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                 int info;
                 info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
                 if (info != 0) {

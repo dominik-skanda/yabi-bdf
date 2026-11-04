@@ -195,9 +195,9 @@ template <class Scalar> class BDFIntegrator {
     inline bool calculate_error_weights(Scalar *errorWeights, Scalar *yWeight,
                                         Scalar *absoluteError, Scalar &relativeError);
 
-    Scalar *z_predictor;
-    Scalar *z_corrector;
-    Scalar *z_corrector_old;
+    std::vector<Scalar> z_predictor;
+    std::vector<Scalar> z_corrector;
+    std::vector<Scalar> z_corrector_old;
 
     // Simultaneous Derivatives
     Scalar **z_predictor_derivatives;
@@ -219,24 +219,24 @@ template <class Scalar> class BDFIntegrator {
     Scalar t_i[2];
     Scalar l_i[7];
 
-    Scalar *corrector;
+    std::vector<Scalar> corrector;
     // Simultaneous Derivatives
     Scalar **corrector_derivatives;
 
-    Scalar *corrector_old;
+    std::vector<Scalar> corrector_old;
     // Simultaneous Derivatives
     Scalar **corrector_old_derivatives;
 
-    Scalar *error_weights;
-    Scalar *absolut_error;
+    std::vector<Scalar> error_weights;
+    std::vector<Scalar> absolut_error;
     Scalar relative_error;
     // Simultaneous Derivatives
     Scalar **error_weights_derivatives;
     Scalar **absolut_error_derivatives;
-    Scalar *relative_error_derivatives;
+    Scalar *relative_error_derivatives; // non-owning: points into the user's seed array
 
     Scalar t_ende;
-    Scalar *solution_Vector;
+    std::vector<Scalar> solution_Vector;
     // Simultaneous Derivatives
     Scalar **solution_Vector_derivatives;
 
@@ -247,11 +247,11 @@ template <class Scalar> class BDFIntegrator {
     Scalar c_n_old;
     Scalar max_StepLength;
     Scalar start_integration_time;
-    Scalar *P;
-    Scalar *J;
-    int *ip;
-    long *scaling_D1;
-    long *scaling_D2;
+    std::vector<Scalar> P;
+    std::vector<Scalar> J;
+    std::vector<int> ip;
+    std::vector<long> scaling_D1;
+    std::vector<long> scaling_D2;
     bool setJacobian;
     bool setNewP;
     bool newtonIteration_Started;
@@ -259,14 +259,14 @@ template <class Scalar> class BDFIntegrator {
     unsigned newtonFAIL;
     unsigned stepFAIL;
     unsigned int RHS_type; // 0 - Autonom; 1 time dependent; 2 time and parameter dependent;
-    Scalar *parameter;
+    std::vector<Scalar> parameter;
     unsigned int sizeOfParameter;
 
     Scalar stepSizeSet_new[6];
     Scalar stepSizeSet_old[6];
 
     Scalar reachableError;
-    Scalar *reachableError_derivatives;
+    std::vector<Scalar> reachableError_derivatives;
 
     // SENSITIVITY GENERATION
 
@@ -306,24 +306,24 @@ template <class Scalar> class BDFIntegrator {
     bool direct;
 
     AbstractRHS<Scalar> *start_CppAD_tape;
-    Scalar *correctorVector_tape;
+    std::vector<Scalar> correctorVector_tape;
     Scalar startTape_stepSize;
 
     Scalar l_i_tape[7];
     Scalar time_tape;
     Scalar stepSizeSet_tape[6];
-    Scalar *z_predictor_tape;
-    Scalar *z_corrector_tape;
+    std::vector<Scalar> z_predictor_tape;
+    std::vector<Scalar> z_corrector_tape;
     Scalar step_size_h_tape;
-    Scalar *forward_solution_Vector;
+    std::vector<Scalar> forward_solution_Vector;
     unsigned int order_corrector_tape;
     bool taping;
     bool getTAPE;
     unsigned int lastForwardOrder;
-    Scalar *P_tape;
-    int *ip_tape;
-    long *scaling_D1_tape;
-    long *scaling_D2_tape;
+    std::vector<Scalar> P_tape;
+    std::vector<int> ip_tape;
+    std::vector<long> scaling_D1_tape;
+    std::vector<long> scaling_D2_tape;
     bool internalError;
 
     bool deleteOldTape();

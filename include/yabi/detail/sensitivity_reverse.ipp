@@ -470,7 +470,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 if (adjointIntermediatePointer->ip == NULL)
                     adjointIntermediatePointer->ip = new int[numOfSpecies];
 
-                // LU factor (and overwrite) the matrix P and ip and jp
+                // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                 int info;
                 info = linalg::GETRF(numOfSpecies, numOfSpecies, adjointIntermediatePointer->P,
                                      numOfSpecies, adjointIntermediatePointer->ip);

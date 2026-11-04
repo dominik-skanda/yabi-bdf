@@ -106,7 +106,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
     }
 
     // CALCULATE ERROR WEIGHTS
-    calculate_error_weights(error_weights, &y_start[0], absolut_error, relative_error);
+    calculate_error_weights(error_weights.data(), &y_start[0], absolut_error.data(), relative_error);
 
     step_size_h = 0.0;
     Scalar temp = 0.0;
@@ -199,33 +199,33 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_pre
     switch (order_corrector) {
     case 1:
         blasTEMP = 2;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A1, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A1, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     case 2:
         blasTEMP = 3;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A2, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A2, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     case 3:
         blasTEMP = 4;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A3, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A3, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     case 4:
         blasTEMP = 5;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A4, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A4, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     case 5:
         blasTEMP = 6;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A5, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A5, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     case 6:
         blasTEMP = 7;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector,
-                           numOfSpecies, A6, blasTEMP, blasScalarZERO, z_predictor, numOfSpecies);
+        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
+                           numOfSpecies, A6, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
         break;
     }
 
@@ -585,7 +585,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
                 Scalar blasTEMP = -1.0;
                 linalg::GER(numOfSpecies, order_corrector, blasTEMP, temp, blasONE, d_i, blasONE,
-                            z_corrector, numOfSpecies);
+                            z_corrector.data(), numOfSpecies);
 
                 if (numOfDerivatives > 0) {
                     for (z = 0; z < numOfDerivatives; z++) {
@@ -721,8 +721,8 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
     }
 
     int blasTEMP = order_corrector + 1;
-    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector, numOfSpecies, temp, blasONE,
-                    blasScalarZERO, solution_Vector, blasONE);
+    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector.data(), numOfSpecies, temp, blasONE,
+                    blasScalarZERO, solution_Vector.data(), blasONE);
 
     if (numOfDerivatives > 0)
         for (z = 0; z < numOfDerivatives; z++)

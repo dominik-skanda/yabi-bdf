@@ -40,7 +40,7 @@ bool BDFIntegrator<Scalar>::setSimultaneousDerivatives(Scalar **y_seed_derivativ
         absolut_error_derivatives = absolut_error_derivatives_;
         y_seed_derivatives = y_seed_derivatives_;
         p_seed_derivatives = p_seed_derivatives_;
-        reachableError_derivatives = new Scalar[numOfDerivatives];
+        reachableError_derivatives.resize(numOfDerivatives);
         z_predictor_derivatives = new Scalar *[numOfDerivatives];
         z_corrector_derivatives = new Scalar *[numOfDerivatives];
         z_corrector_derivatives_old = new Scalar *[numOfDerivatives];
@@ -149,22 +149,22 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::freeSimultaneousDerivativ
     }
     z_corrector_derivatives_old = NULL;
 
-    if (reachableError_derivatives != NULL)
-        delete[] reachableError_derivatives;
-    reachableError_derivatives = NULL;
+    if (!reachableError_derivatives.empty())
+        
+    reachableError_derivatives.clear();
 
     numOfDerivatives = 0;
     return true;
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
-    if (z_corrector_tape != NULL) {
-        delete[] z_corrector_tape;
-        z_corrector_tape = NULL;
+    if (!z_corrector_tape.empty()) {
+        
+        z_corrector_tape.clear();
     }
-    if (z_predictor_tape != NULL) {
-        delete[] z_predictor_tape;
-        z_predictor_tape = NULL;
+    if (!z_predictor_tape.empty()) {
+        
+        z_predictor_tape.clear();
     }
     while (endTAPE != NULL) {
         if (endTAPE->endSolution != NULL)
@@ -199,20 +199,20 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
 
     start_CppAD_tape = NULL;
 
-    if (P_tape != NULL)
-        delete[] P_tape;
-    P_tape = NULL;
-    if (ip_tape != NULL)
-        delete[] ip_tape;
-    ip_tape = NULL;
+    if (!P_tape.empty())
+        
+    P_tape.clear();
+    if (!ip_tape.empty())
+        
+    ip_tape.clear();
 
-    if (scaling_D1_tape != NULL)
-        delete[] scaling_D1_tape;
-    scaling_D1_tape = NULL;
+    if (!scaling_D1_tape.empty())
+        
+    scaling_D1_tape.clear();
 
-    if (scaling_D2_tape != NULL)
-        delete[] scaling_D2_tape;
-    scaling_D2_tape = NULL;
+    if (!scaling_D2_tape.empty())
+        
+    scaling_D2_tape.clear();
 
     return true;
 }
