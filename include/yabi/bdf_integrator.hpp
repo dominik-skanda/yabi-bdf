@@ -42,6 +42,7 @@
     #include <yabi/detail/integrator_config.hpp>
     #include <yabi/detail/nordsieck_state.hpp>
     #include <yabi/detail/replay_tape.hpp>
+    #include <yabi/detail/step_controller.hpp>
     #include <yabi/linear_algebra.hpp>
 
 namespace yabi {
@@ -337,6 +338,10 @@ template <class Scalar> class BDFIntegrator {
     // value types; see detail/integrator_config.hpp).
     detail::IntegratorConfig<Scalar> config;
     detail::IntegratorStatistics stats;
+
+    // Step-size/order selection on top of the Nordsieck state (see
+    // detail/step_controller.hpp).
+    detail::StepController<Scalar> stepController;
 };
 
 } // namespace yabi

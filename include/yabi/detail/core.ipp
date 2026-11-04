@@ -27,7 +27,9 @@
 
 namespace yabi {
 
-template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_) {
+template <typename Scalar>
+BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
+    : stepController(nordsieck, config) {
     unsigned int i;
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
