@@ -62,9 +62,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
 
     std::vector<Scalar> y_start(argumentSize);
     for (i = 0; i < numOfSpecies; i++)
-        y_start[i] = z_corrector[i];
+        y_start[i] = nordsieck.z_corrector[i];
     if (RHS_type >= 1)
-        y_start[numOfSpecies] = t_i[1];
+        y_start[numOfSpecies] = nordsieck.t_i[1];
     if (RHS_type == 2)
         for (i = 0; i < sizeOfParameter; i++)
             y_start[numOfSpecies + 1 + i] = parameter[i];
@@ -108,171 +108,54 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
     // CALCULATE ERROR WEIGHTS
     calculate_error_weights(error_weights.data(), &y_start[0], absolut_error.data(), relative_error);
 
-    step_size_h = 0.0;
+    nordsieck.step_size_h = 0.0;
     Scalar temp = 0.0;
     for (i = 0; i < numOfSpecies; i++) {
         temp = (y_ddot[i] / error_weights[i]);
-        step_size_h += temp * temp;
+        nordsieck.step_size_h += temp * temp;
     }
-    step_size_h = sqrt(step_size_h) / (Scalar)numOfSpecies;
+    nordsieck.step_size_h = sqrt(nordsieck.step_size_h) / (Scalar)numOfSpecies;
 
     // If the second derivative vanishes (e.g. y_start=0 and F(y_start)=0),
     // the estimate is not defined.  Fall back to the maximum step size as
     // described in the dissertation.
-    if (!(step_size_h > 0.0) || !std::isfinite(step_size_h))
-        step_size_h = max_StepLength;
+    if (!(nordsieck.step_size_h > 0.0) || !std::isfinite(nordsieck.step_size_h))
+        nordsieck.step_size_h = max_StepLength;
     else {
-        step_size_h = sqrt((2.0 * relative_error * config.START_STEP_SIZE_SAFETY) / step_size_h);
-        if (!(step_size_h > 0.0) || !std::isfinite(step_size_h))
-            step_size_h = max_StepLength;
+        nordsieck.step_size_h =
+            sqrt((2.0 * relative_error * config.START_STEP_SIZE_SAFETY) / nordsieck.step_size_h);
+        if (!(nordsieck.step_size_h > 0.0) || !std::isfinite(nordsieck.step_size_h))
+            nordsieck.step_size_h = max_StepLength;
     }
-    if (step_size_h > max_StepLength)
-        step_size_h = max_StepLength;
+    if (nordsieck.step_size_h > max_StepLength)
+        nordsieck.step_size_h = max_StepLength;
     // For purely autonomous systems the start step heuristic can be overly
     // aggressive for very stiff problems (e.g. Robertson). Be more
     // conservative to resolve fast transients.
     if (RHS_type == 0) {
         if (max_StepLength > 0) {
-            if (step_size_h > max_StepLength * 1e-4)
-                step_size_h = max_StepLength * 1e-4;
+            if (nordsieck.step_size_h > max_StepLength * 1e-4)
+                nordsieck.step_size_h = max_StepLength * 1e-4;
         }
-        if (!(step_size_h > 0.0) || !std::isfinite(step_size_h)) {
+        if (!(nordsieck.step_size_h > 0.0) || !std::isfinite(nordsieck.step_size_h)) {
             if (max_StepLength > 0)
-                step_size_h = max_StepLength * 1e-4;
+                nordsieck.step_size_h = max_StepLength * 1e-4;
             else
-                step_size_h = 1e-12;
+                nordsieck.step_size_h = 1e-12;
         }
     }
     return true;
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_l_vector() {
-    unsigned int i, j, k;
     if (!isIntegrattionStarted)
         return false;
-
-    Scalar *l_kahan = new Scalar[6];
-    for (i = 0; i < 6; i++)
-        l_kahan[i] = 0.0;
-    Scalar y;
-    Scalar t;
-
-    l_i[0] = 1.0;
-    for (i = 1; i <= order_corrector; i++)
-        for (j = i; j > 0; j--) {
-            if (j == i) {
-                l_i[j] = 1.0;
-                for (k = 0; k < i; k++)
-                    l_i[j] *= (step_size_h / stepSizeSet_new[k]);
-            } else {
-                // l_i[j]=l_i[j]+(l_i[j-1]*(step_size_h/stepSizeSet_new[i-1]));
-                y = (l_i[j - 1] * (step_size_h / stepSizeSet_new[i - 1])) - l_kahan[j - 1];
-                t = l_i[j] + y;
-                l_kahan[j - 1] = (t - l_i[j]) - y;
-                l_i[j] = t;
-            }
-        }
-    delete[] l_kahan;
-    return true;
+    return nordsieck.calculate_l_vector();
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_predictor() {
-    unsigned int z;
-
-    static Scalar A1[4] = {1., 0., 1., 1.};
-    static Scalar A2[9] = {1., 0., 0., 1., 1., 0., 1., 2., 1.};
-    static Scalar A3[16] = {1., 0., 0., 0., 1., 1., 0., 0., 1., 2., 1., 0., 1., 3., 3., 1.};
-    static Scalar A4[25] = {1., 0., 0., 0., 0., 1., 1., 0., 0., 0., 1., 2., 1.,
-                            0., 0., 1., 3., 3., 1., 0., 1., 4., 6., 4., 1.};
-    static Scalar A5[36] = {1., 0., 0., 0., 0., 0., 1., 1., 0.,  0.,  0., 0.,
-                            1., 2., 1., 0., 0., 0., 1., 3., 3.,  1.,  0., 0.,
-                            1., 4., 6., 4., 1., 0., 1., 5., 10., 10., 5., 1.};
-
-    static Scalar A6[49] = {1., 0., 0., 0.,  0.,  0., 0., 1., 1., 0., 0.,  0.,  0.,  0., 1., 2., 1.,
-                            0., 0., 0., 0.,  1.,  3., 3., 1., 0., 0., 0.,  1.,  4.,  6., 4., 1., 0.,
-                            0., 1., 5., 10., 10., 5., 1., 0., 1., 6., 15., 20., 15., 6., 1.};
-
-    if (order_corrector + 1 > 7)
-        return false;
-
-    int blasTEMP;
-    switch (order_corrector) {
-    case 1:
-        blasTEMP = 2;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A1, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    case 2:
-        blasTEMP = 3;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A2, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    case 3:
-        blasTEMP = 4;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A3, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    case 4:
-        blasTEMP = 5;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A4, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    case 5:
-        blasTEMP = 6;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A5, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    case 6:
-        blasTEMP = 7;
-        linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE, z_corrector.data(),
-                           numOfSpecies, A6, blasTEMP, blasScalarZERO, z_predictor.data(), numOfSpecies);
-        break;
-    }
-
-    if (numOfDerivatives > 0) {
-        for (z = 0; z < numOfDerivatives; z++) {
-            switch (order_corrector) {
-            case 1:
-                blasTEMP = 2;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A1, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            case 2:
-                blasTEMP = 3;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A2, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            case 3:
-                blasTEMP = 4;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A3, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            case 4:
-                blasTEMP = 5;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A4, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            case 5:
-                blasTEMP = 6;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A5, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            case 6:
-                blasTEMP = 7;
-                linalg::DGEMM_NT_T(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                   z_corrector_derivatives[z], numOfSpecies, A6, blasTEMP,
-                                   blasScalarZERO, z_predictor_derivatives[z], numOfSpecies);
-                break;
-            }
-        }
-    }
-
-    return true;
+    return nordsieck.calculate_next_predictor(numOfSpecies, numOfDerivatives,
+                                              z_corrector_derivatives, z_predictor_derivatives);
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
@@ -282,39 +165,40 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
     // c_n
     Scalar c_n = 1.0;
-    for (i = 1; i < order_corrector; i++)
-        c_n *= stepSizeSet_new[i] / (stepSizeSet_new[i] - step_size_h);
+    for (i = 1; i < nordsieck.order_corrector; i++)
+        c_n *=
+            nordsieck.stepSizeSet_new[i] / (nordsieck.stepSizeSet_new[i] - nordsieck.step_size_h);
     c_n += 1.0;
-    for (i = 1; i <= order_corrector; i++)
+    for (i = 1; i <= nordsieck.order_corrector; i++)
         c_n = c_n / (i + 1);
 
-    for (i = 0; i < order_corrector; i++)
-        c_n *= stepSizeSet_new[i] / step_size_h;
+    for (i = 0; i < nordsieck.order_corrector; i++)
+        c_n *= nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h;
 
-    if (num_of_steps_per_order < order_corrector + 1) {
+    if (nordsieck.num_of_steps_per_order < nordsieck.order_corrector + 1) {
         Scalar eta = minimalEta;
 
         if (config.HITSOLUTION)
-            if ((eta * step_size_h) + t_i[1] > t_ende)
-                eta = (t_ende - t_i[1]) / step_size_h;
+            if ((eta * nordsieck.step_size_h) + nordsieck.t_i[1] > t_ende)
+                eta = (t_ende - nordsieck.t_i[1]) / nordsieck.step_size_h;
 
-        if (eta * step_size_h < max_StepLength) {
-            step_size_h = step_size_h * eta;
-            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+        if (eta * nordsieck.step_size_h < max_StepLength) {
+            nordsieck.step_size_h = nordsieck.step_size_h * eta;
+            if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
             }
-            t_i[0] = step_size_h + t_i[1];
+            nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
         } else {
-            eta = max_StepLength / step_size_h;
-            step_size_h = step_size_h * eta;
-            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+            eta = max_StepLength / nordsieck.step_size_h;
+            nordsieck.step_size_h = nordsieck.step_size_h * eta;
+            if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
             }
-            t_i[0] = step_size_h + t_i[1];
+            nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
         }
     } else {
         unsigned int i;
@@ -328,40 +212,44 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         Scalar temp1 = 0.0;
         Scalar *temp2 = new Scalar[numOfSpecies];
 
-        if (order_corrector > 1) {
+        if (nordsieck.order_corrector > 1) {
             temp1 = -1.0;
-            for (i = 0; i < order_corrector - 1; i++)
-                temp1 *= (stepSizeSet_new[i]) / step_size_h;
+            for (i = 0; i < nordsieck.order_corrector - 1; i++)
+                temp1 *= (nordsieck.stepSizeSet_new[i]) / nordsieck.step_size_h;
 
-            temp1 /= (l_i[1] - (step_size_h / stepSizeSet_new[order_corrector - 1]));
+            temp1 /=
+                (nordsieck.l_i[1] - (nordsieck.step_size_h /
+                                     nordsieck.stepSizeSet_new[nordsieck.order_corrector - 1]));
 
             for (i = 0; i < numOfSpecies; i++)
-                temp2[i] =
-                    z_corrector[numOfSpecies * order_corrector + i] * temp1 / error_weights[i];
+                temp2[i] = nordsieck.z_corrector[numOfSpecies * nordsieck.order_corrector + i] *
+                           temp1 / error_weights[i];
 
             normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
             Scalar mu = config.ORDER_DOWN_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
             Scalar sumTemp = 0.0;
-            for (i = 1; i <= order_corrector - 1; i++)
+            for (i = 1; i <= nordsieck.order_corrector - 1; i++)
                 sumTemp += (1.0 / i);
 
             eta_q_minus = sumTemp;
             sumTemp = 0.0;
-            for (i = 0; i < order_corrector - 1; i++)
-                sumTemp += (step_size_h / stepSizeSet_new[i]);
+            for (i = 0; i < nordsieck.order_corrector - 1; i++)
+                sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
             eta_q_minus /= sumTemp;
-            for (i = 2; i <= order_corrector - 1; i++)
-                eta_q_minus *= stepSizeSet_new[i - 1] / step_size_h / i;
-            eta_q_minus = pow(eta_q_minus, 1.0 / order_corrector);
-            eta_q_minus *= pow(mu, 1.0 / order_corrector);
+            for (i = 2; i <= nordsieck.order_corrector - 1; i++)
+                eta_q_minus *= nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
+            eta_q_minus = pow(eta_q_minus, 1.0 / nordsieck.order_corrector);
+            eta_q_minus *= pow(mu, 1.0 / nordsieck.order_corrector);
 
             if (numOfDerivatives > 0) {
                 Scalar eta_q_minus_derivatives;
                 for (z = 0; z < numOfDerivatives; z++) {
                     for (i = 0; i < numOfSpecies; i++)
-                        temp2[i] = z_corrector_derivatives[z][numOfSpecies * order_corrector + i] *
-                                   temp1 / error_weights_derivatives[z][i];
+                        temp2[i] =
+                            z_corrector_derivatives[z]
+                                                   [numOfSpecies * nordsieck.order_corrector + i] *
+                            temp1 / error_weights_derivatives[z][i];
 
                     normWeightedLocalTruncError =
                         linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
@@ -369,18 +257,20 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                     mu = config.ORDER_DOWN_SAVETY_STEP *
                          (reachableError_derivatives[z] / normWeightedLocalTruncError);
                     sumTemp = 0.0;
-                    for (i = 1; i <= order_corrector - 1; i++)
+                    for (i = 1; i <= nordsieck.order_corrector - 1; i++)
                         sumTemp += (1.0 / i);
 
                     eta_q_minus_derivatives = sumTemp;
                     sumTemp = 0.0;
-                    for (i = 0; i < order_corrector - 1; i++)
-                        sumTemp += (step_size_h / stepSizeSet_new[i]);
+                    for (i = 0; i < nordsieck.order_corrector - 1; i++)
+                        sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
                     eta_q_minus_derivatives /= sumTemp;
-                    for (i = 2; i <= order_corrector - 1; i++)
-                        eta_q_minus_derivatives *= stepSizeSet_new[i - 1] / step_size_h / i;
-                    eta_q_minus_derivatives = pow(eta_q_minus_derivatives, 1.0 / order_corrector);
-                    eta_q_minus_derivatives *= pow(mu, 1.0 / order_corrector);
+                    for (i = 2; i <= nordsieck.order_corrector - 1; i++)
+                        eta_q_minus_derivatives *=
+                            nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
+                    eta_q_minus_derivatives =
+                        pow(eta_q_minus_derivatives, 1.0 / nordsieck.order_corrector);
+                    eta_q_minus_derivatives *= pow(mu, 1.0 / nordsieck.order_corrector);
 
                     if (eta_q_minus_derivatives < eta_q_minus)
                         eta_q_minus = eta_q_minus_derivatives;
@@ -390,39 +280,43 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
         Scalar eta_q_plus = 0.0;
 
-        if (order_corrector < config.MAXORDER) {
-            temp1 = (Scalar)pow((step_size_h / (stepSizeSet_new[1] - step_size_h)),
-                                order_corrector + 1);
-            temp1 *= (c_n / c_n_old);
+        if (nordsieck.order_corrector < config.MAXORDER) {
+            temp1 = (Scalar)pow(
+                (nordsieck.step_size_h / (nordsieck.stepSizeSet_new[1] - nordsieck.step_size_h)),
+                nordsieck.order_corrector + 1);
+            temp1 *= (c_n / nordsieck.c_n_old);
 
             Scalar temp3 = 1.0;
-            for (i = 1; i < order_corrector; i++)
-                temp3 *= stepSizeSet_new[i] / (stepSizeSet_new[i] - step_size_h);
+            for (i = 1; i < nordsieck.order_corrector; i++)
+                temp3 *= nordsieck.stepSizeSet_new[i] /
+                         (nordsieck.stepSizeSet_new[i] - nordsieck.step_size_h);
             temp3 += 1;
-            temp3 =
-                -stepSizeSet_new[order_corrector] /
-                (step_size_h * temp3 * (l_i[1] + (step_size_h / stepSizeSet_new[order_corrector])) *
-                 (Scalar)(order_corrector + 2));
+            temp3 = -nordsieck.stepSizeSet_new[nordsieck.order_corrector] /
+                    (nordsieck.step_size_h * temp3 *
+                     (nordsieck.l_i[1] + (nordsieck.step_size_h /
+                                          nordsieck.stepSizeSet_new[nordsieck.order_corrector])) *
+                     (Scalar)(nordsieck.order_corrector + 2));
 
             for (i = 0; i < numOfSpecies; i++)
-                temp2[i] = temp3 * (corrector[i] - (corrector_old[i] * temp1)) / error_weights[i];
+                temp2[i] = temp3 * (nordsieck.corrector[i] - (nordsieck.corrector_old[i] * temp1)) /
+                           error_weights[i];
 
             normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
             Scalar mu = config.ORDER_UP_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
             Scalar sumTemp = 0.0;
-            for (i = 1; i <= order_corrector + 1; i++)
+            for (i = 1; i <= nordsieck.order_corrector + 1; i++)
                 sumTemp += (1.0 / i);
 
             eta_q_plus = sumTemp;
             sumTemp = 0.0;
-            for (i = 0; i < order_corrector + 1; i++)
-                sumTemp += (step_size_h / stepSizeSet_new[i]);
+            for (i = 0; i < nordsieck.order_corrector + 1; i++)
+                sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
             eta_q_plus /= sumTemp;
-            for (i = 2; i <= order_corrector + 1; i++)
-                eta_q_plus *= stepSizeSet_new[i - 1] / step_size_h / i;
-            eta_q_plus = pow(eta_q_plus, 1.0 / (order_corrector + 2));
-            eta_q_plus *= pow(mu, 1.0 / (order_corrector + 2));
+            for (i = 2; i <= nordsieck.order_corrector + 1; i++)
+                eta_q_plus *= nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
+            eta_q_plus = pow(eta_q_plus, 1.0 / (nordsieck.order_corrector + 2));
+            eta_q_plus *= pow(mu, 1.0 / (nordsieck.order_corrector + 2));
 
             if (numOfDerivatives > 0) {
                 Scalar eta_q_plus_derivatives;
@@ -439,19 +333,20 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                     mu = config.ORDER_UP_SAVETY_STEP *
                          (reachableError_derivatives[z] / normWeightedLocalTruncError);
                     sumTemp = 0.0;
-                    for (i = 1; i <= order_corrector + 1; i++)
+                    for (i = 1; i <= nordsieck.order_corrector + 1; i++)
                         sumTemp += (1.0 / i);
 
                     eta_q_plus_derivatives = sumTemp;
                     sumTemp = 0.0;
-                    for (i = 0; i < order_corrector + 1; i++)
-                        sumTemp += (step_size_h / stepSizeSet_new[i]);
+                    for (i = 0; i < nordsieck.order_corrector + 1; i++)
+                        sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
                     eta_q_plus_derivatives /= sumTemp;
-                    for (i = 2; i <= order_corrector + 1; i++)
-                        eta_q_plus_derivatives *= stepSizeSet_new[i - 1] / step_size_h / i;
+                    for (i = 2; i <= nordsieck.order_corrector + 1; i++)
+                        eta_q_plus_derivatives *=
+                            nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
                     eta_q_plus_derivatives =
-                        pow(eta_q_plus_derivatives, 1.0 / (order_corrector + 2));
-                    eta_q_plus_derivatives *= pow(mu, 1.0 / (order_corrector + 2));
+                        pow(eta_q_plus_derivatives, 1.0 / (nordsieck.order_corrector + 2));
+                    eta_q_plus_derivatives *= pow(mu, 1.0 / (nordsieck.order_corrector + 2));
 
                     if (eta_q_plus_derivatives < eta_q_plus)
                         eta_q_plus = eta_q_plus_derivatives;
@@ -462,97 +357,97 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         delete[] temp2;
         Scalar eta_q = minimalEta;
 
-        if (order_corrector - 1 == 1)
+        if (nordsieck.order_corrector - 1 == 1)
             if (eta_q_minus > config.RESTRICT_ORDER_1_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_1_RATIO;
 
-        if (order_corrector - 1 == 2)
+        if (nordsieck.order_corrector - 1 == 2)
             if (eta_q_minus > config.RESTRICT_ORDER_2_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_2_RATIO;
 
-        if (order_corrector - 1 == 3)
+        if (nordsieck.order_corrector - 1 == 3)
             if (eta_q_minus > config.RESTRICT_ORDER_3_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_3_RATIO;
 
-        if (order_corrector - 1 == 4)
+        if (nordsieck.order_corrector - 1 == 4)
             if (eta_q_minus > config.RESTRICT_ORDER_4_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_4_RATIO;
 
-        if (order_corrector - 1 == 5)
+        if (nordsieck.order_corrector - 1 == 5)
             if (eta_q_minus > config.RESTRICT_ORDER_5_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_5_RATIO;
 
-        if (order_corrector - 1 == 6)
+        if (nordsieck.order_corrector - 1 == 6)
             if (eta_q_minus > config.RESTRICT_ORDER_6_RATIO)
                 eta_q_minus = config.RESTRICT_ORDER_6_RATIO;
 
-        if (order_corrector + 1 == 1)
+        if (nordsieck.order_corrector + 1 == 1)
             if (eta_q_plus > config.RESTRICT_ORDER_1_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_1_RATIO;
 
-        if (order_corrector + 1 == 2)
+        if (nordsieck.order_corrector + 1 == 2)
             if (eta_q_plus > config.RESTRICT_ORDER_2_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_2_RATIO;
 
-        if (order_corrector + 1 == 3)
+        if (nordsieck.order_corrector + 1 == 3)
             if (eta_q_plus > config.RESTRICT_ORDER_3_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_3_RATIO;
 
-        if (order_corrector + 1 == 4)
+        if (nordsieck.order_corrector + 1 == 4)
             if (eta_q_plus > config.RESTRICT_ORDER_4_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_4_RATIO;
 
-        if (order_corrector + 1 == 5)
+        if (nordsieck.order_corrector + 1 == 5)
             if (eta_q_plus > config.RESTRICT_ORDER_5_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_5_RATIO;
 
-        if (order_corrector + 1 == 6)
+        if (nordsieck.order_corrector + 1 == 6)
             if (eta_q_plus > config.RESTRICT_ORDER_6_RATIO)
                 eta_q_plus = config.RESTRICT_ORDER_6_RATIO;
 
         if (config.HITSOLUTION)
-            if ((eta_q * step_size_h) + t_i[1] > t_ende)
-                eta_q = (t_ende - t_i[1]) / step_size_h;
+            if ((eta_q * nordsieck.step_size_h) + nordsieck.t_i[1] > t_ende)
+                eta_q = (t_ende - nordsieck.t_i[1]) / nordsieck.step_size_h;
 
-        if (eta_q * step_size_h > max_StepLength)
-            eta_q = max_StepLength / step_size_h;
-
-        if (config.HITSOLUTION)
-            if ((eta_q_plus * step_size_h) + t_i[1] > t_ende)
-                eta_q_plus = (t_ende - t_i[1]) / step_size_h;
-
-        if (eta_q_plus * step_size_h > max_StepLength)
-            eta_q_plus = max_StepLength / step_size_h;
+        if (eta_q * nordsieck.step_size_h > max_StepLength)
+            eta_q = max_StepLength / nordsieck.step_size_h;
 
         if (config.HITSOLUTION)
-            if ((eta_q_minus * step_size_h) + t_i[1] > t_ende)
-                eta_q_minus = (t_ende - t_i[1]) / step_size_h;
+            if ((eta_q_plus * nordsieck.step_size_h) + nordsieck.t_i[1] > t_ende)
+                eta_q_plus = (t_ende - nordsieck.t_i[1]) / nordsieck.step_size_h;
 
-        if (eta_q_minus * step_size_h > max_StepLength)
-            eta_q_minus = max_StepLength / step_size_h;
+        if (eta_q_plus * nordsieck.step_size_h > max_StepLength)
+            eta_q_plus = max_StepLength / nordsieck.step_size_h;
 
-        if (eta_q < eta_q_minus && order_corrector > config.MINORDER) {
-            if (eta_q_minus < eta_q_plus && order_corrector < config.MAXORDER) {
+        if (config.HITSOLUTION)
+            if ((eta_q_minus * nordsieck.step_size_h) + nordsieck.t_i[1] > t_ende)
+                eta_q_minus = (t_ende - nordsieck.t_i[1]) / nordsieck.step_size_h;
+
+        if (eta_q_minus * nordsieck.step_size_h > max_StepLength)
+            eta_q_minus = max_StepLength / nordsieck.step_size_h;
+
+        if (eta_q < eta_q_minus && nordsieck.order_corrector > config.MINORDER) {
+            if (eta_q_minus < eta_q_plus && nordsieck.order_corrector < config.MAXORDER) {
                 for (i = 0; i < numOfSpecies; i++)
-                    for (j = order_corrector + 1; j < 7; j++)
-                        z_corrector[numOfSpecies * j + i] = 0.0;
+                    for (j = nordsieck.order_corrector + 1; j < 7; j++)
+                        nordsieck.z_corrector[numOfSpecies * j + i] = 0.0;
 
                 if (numOfDerivatives > 0) {
                     for (z = 0; z < numOfDerivatives; z++)
                         for (i = 0; i < numOfSpecies; i++)
-                            for (j = order_corrector + 1; j < 7; j++)
+                            for (j = nordsieck.order_corrector + 1; j < 7; j++)
                                 z_corrector_derivatives[z][numOfSpecies * j + i] = 0.0;
                 }
 
-                order_corrector += 1;
-                step_size_h = step_size_h * eta_q_plus;
-                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+                nordsieck.order_corrector += 1;
+                nordsieck.step_size_h = nordsieck.step_size_h * eta_q_plus;
+                if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                    nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
                 }
-                t_i[0] = step_size_h + t_i[1];
-                num_of_steps_per_order = 0.0;
+                nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
+                nordsieck.num_of_steps_per_order = 0.0;
                 isOrderUp = true;
             } else {
                 Scalar *d_kahan = new Scalar[4];
@@ -564,16 +459,18 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                 Scalar *d_i = new Scalar[6];
                 d_i[0] = 0.0;
                 d_i[1] = 0.0;
-                for (i = 2; i <= order_corrector; i++)
+                for (i = 2; i <= nordsieck.order_corrector; i++)
                     for (j = i; j > 1; j--) {
                         if (j == i) {
                             if (j != 6)
                                 d_i[j] = 1.0;
                         } else {
                             // d_i[j]=d_i[j-1]+d_i[j]*stepSizeSet_new[i-3]/step_size_h;
-                            y = d_i[j - 1] -
-                                (d_kahan[j - 2] * stepSizeSet_new[i - 3] / step_size_h);
-                            t = (d_i[j] * stepSizeSet_new[i - 3] / step_size_h) + y;
+                            y = d_i[j - 1] - (d_kahan[j - 2] * nordsieck.stepSizeSet_new[i - 3] /
+                                              nordsieck.step_size_h);
+                            t = (d_i[j] * nordsieck.stepSizeSet_new[i - 3] /
+                                 nordsieck.step_size_h) +
+                                y;
                             d_kahan[j - 2] = (t - d_i[j]) - y;
                             d_i[j] = t;
                         }
@@ -581,82 +478,85 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
                 Scalar *temp = new Scalar[numOfSpecies];
                 for (i = 0; i < numOfSpecies; i++)
-                    temp[i] = z_corrector[order_corrector * numOfSpecies + i];
+                    temp[i] = nordsieck.z_corrector[nordsieck.order_corrector * numOfSpecies + i];
 
                 Scalar blasTEMP = -1.0;
-                linalg::GER(numOfSpecies, order_corrector, blasTEMP, temp, blasONE, d_i, blasONE,
-                            z_corrector.data(), numOfSpecies);
+                linalg::GER(numOfSpecies, nordsieck.order_corrector, blasTEMP, temp, blasONE, d_i,
+                            blasONE, nordsieck.z_corrector.data(), numOfSpecies);
 
                 if (numOfDerivatives > 0) {
                     for (z = 0; z < numOfDerivatives; z++) {
                         for (i = 0; i < numOfSpecies; i++)
-                            temp[i] =
-                                z_corrector_derivatives[z][order_corrector * numOfSpecies + i];
+                            temp[i] = z_corrector_derivatives[z][nordsieck.order_corrector *
+                                                                     numOfSpecies +
+                                                                 i];
                         Scalar blasTEMP = -1.0;
-                        linalg::GER(numOfSpecies, order_corrector, blasTEMP, temp, blasONE, d_i,
-                                    blasONE, z_corrector_derivatives[z], numOfSpecies);
+                        linalg::GER(numOfSpecies, nordsieck.order_corrector, blasTEMP, temp,
+                                    blasONE, d_i, blasONE, z_corrector_derivatives[z],
+                                    numOfSpecies);
                     }
                 }
 
                 delete[] temp;
-                order_corrector -= 1;
-                step_size_h = step_size_h * eta_q_minus;
-                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+                nordsieck.order_corrector -= 1;
+                nordsieck.step_size_h = nordsieck.step_size_h * eta_q_minus;
+                if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                    nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
                 }
-                t_i[0] = step_size_h + t_i[1];
+                nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
 
                 delete[] d_i;
                 delete[] d_kahan;
-                num_of_steps_per_order = 0;
+                nordsieck.num_of_steps_per_order = 0;
                 isOrderDown = true;
             }
-        } else if ((eta_q < eta_q_plus || order_corrector < config.MINORDER) && order_corrector < config.MAXORDER) {
+        } else if ((eta_q < eta_q_plus || nordsieck.order_corrector < config.MINORDER) &&
+                   nordsieck.order_corrector < config.MAXORDER) {
             for (i = 0; i < numOfSpecies; i++)
-                for (j = order_corrector + 1; j < 7; j++)
-                    z_corrector[numOfSpecies * j + i] = 0.0;
+                for (j = nordsieck.order_corrector + 1; j < 7; j++)
+                    nordsieck.z_corrector[numOfSpecies * j + i] = 0.0;
 
             if (numOfDerivatives > 0) {
                 for (z = 0; z < numOfDerivatives; z++)
                     for (i = 0; i < numOfSpecies; i++)
-                        for (j = order_corrector + 1; j < 7; j++)
+                        for (j = nordsieck.order_corrector + 1; j < 7; j++)
                             z_corrector_derivatives[z][numOfSpecies * j + i] = 0.0;
             }
 
-            order_corrector += 1;
-            step_size_h = step_size_h * eta_q_plus;
-            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+            nordsieck.order_corrector += 1;
+            nordsieck.step_size_h = nordsieck.step_size_h * eta_q_plus;
+            if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
             }
-            t_i[0] = step_size_h + t_i[1];
-            num_of_steps_per_order = 0;
+            nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
+            nordsieck.num_of_steps_per_order = 0;
             isOrderUp = true;
         } else {
             if (!std::isinf(eta_q)) {
-                step_size_h = step_size_h * eta_q;
-                if (step_size_h < 4 * config.MACHINEPRECISION * t_i[1]) {
+                nordsieck.step_size_h = nordsieck.step_size_h * eta_q;
+                if (nordsieck.step_size_h < 4 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                    nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
                 }
-                t_i[0] = step_size_h + t_i[1];
+                nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
             } else {
-                eta_q = max_StepLength / step_size_h;
-                step_size_h = step_size_h * eta_q;
-                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+                eta_q = max_StepLength / nordsieck.step_size_h;
+                nordsieck.step_size_h = nordsieck.step_size_h * eta_q;
+                if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+                    nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
                 }
-                t_i[0] = step_size_h + t_i[1];
+                nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
             }
         }
     }
-    c_n_old = c_n;
+    nordsieck.c_n_old = c_n;
     if (taping) {
         if (isOrderUp == true && isOrderDown == true)
             return false;
@@ -675,41 +575,24 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         if (isOrderUp) {
             tape->orderDOWN = false;
             tape->orderUP = true;
-            tape->stepSize = step_size_h;
+            tape->stepSize = nordsieck.step_size_h;
         }
         if (isOrderDown) {
             tape->orderUP = false;
             tape->orderDOWN = true;
-            tape->stepSize = step_size_h;
+            tape->stepSize = nordsieck.step_size_h;
         }
     }
     return true;
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_vector() {
-    unsigned int i, j, z;
-
     if (internalError)
         return false;
 
-    Scalar *temp = new Scalar[order_corrector + 1];
-    for (i = 0; i <= order_corrector; i++) {
-        temp[i] = 1.0;
-        for (j = 0; j < i; j++)
-            temp[i] *= (t_ende - t_i[1]) / step_size_h;
-    }
+    nordsieck.calculate_output_vector(numOfSpecies, numOfDerivatives, z_corrector_derivatives,
+                                      solution_Vector_derivatives, t_ende);
 
-    int blasTEMP = order_corrector + 1;
-    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector.data(), numOfSpecies, temp, blasONE,
-                    blasScalarZERO, solution_Vector.data(), blasONE);
-
-    if (numOfDerivatives > 0)
-        for (z = 0; z < numOfDerivatives; z++)
-            linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector_derivatives[z],
-                            numOfSpecies, temp, blasONE, blasScalarZERO,
-                            solution_Vector_derivatives[z], blasONE);
-
-    delete[] temp;
     if (taping) {
         if (endTAPE == NULL && startTAPE != NULL)
             return false;
@@ -719,7 +602,7 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
             intermediateTAPE = endTAPE;
 
         tape->calculate_output = true;
-        tape->stepSize = step_size_h;
+        tape->stepSize = nordsieck.step_size_h;
         tape->timePoint = t_ende;
         tape->orderUP = false;
         tape->orderDOWN = false;

@@ -87,8 +87,8 @@ bool BDFIntegrator<Scalar>::setSimultaneousDerivatives(Scalar **y_seed_derivativ
             df = RHS->Forward(1, cppAD_argument);
 
             for (j = 0; j < numOfSpecies; j++) {
-                z_corrector_derivatives[i][numOfSpecies + j] = step_size_h * df[j];
-                z_corrector_derivatives_old[i][numOfSpecies + j] = step_size_h * df[j];
+                z_corrector_derivatives[i][numOfSpecies + j] = nordsieck.step_size_h * df[j];
+                z_corrector_derivatives_old[i][numOfSpecies + j] = nordsieck.step_size_h * df[j];
             }
             for (j = 0; j < numOfSpecies; j++)
                 for (k = 2; k < 7; k++) {
@@ -200,7 +200,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
         return false;
     }
 
-    startTape_stepSize = step_size_h;
+    startTape_stepSize = nordsieck.step_size_h;
     unsigned int i;
 
     unsigned int cppAD_argument_size = 0;
@@ -215,7 +215,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
     std::vector<Scalar> cppAD_argument(cppAD_argument_size);
 
     for (i = 0; i < numOfSpecies; i++)
-        cppAD_argument[i] = z_corrector[i];
+        cppAD_argument[i] = nordsieck.z_corrector[i];
     if (RHS_type >= 1)
         cppAD_argument[numOfSpecies] = start_integration_time;
     if (RHS_type == 2)

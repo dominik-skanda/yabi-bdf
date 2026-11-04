@@ -85,13 +85,13 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
             }
         }
     } else {
-        step_size_h_adjoint = step_size_h_old;
-        order_corrector_adjoint = order_corrector;
+        step_size_h_adjoint = nordsieck.step_size_h_old;
+        order_corrector_adjoint = nordsieck.order_corrector;
         for (i = 0; i < 6; i++)
-            stepSizeSet_adjoint[i] = stepSizeSet_new[i];
-        time_tape_adjoint = t_i[1];
+            stepSizeSet_adjoint[i] = nordsieck.stepSizeSet_new[i];
+        time_tape_adjoint = nordsieck.t_i[1];
         for (i = 0; i < 7; i++)
-            l_i_adjoint[i] = l_i[i];
+            l_i_adjoint[i] = nordsieck.l_i[i];
 
         if (!direct) {
             for (i = 0; i < numOfSpecies; i++) {

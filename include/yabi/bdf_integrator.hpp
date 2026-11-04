@@ -39,9 +39,10 @@
     #include <string>
     #include <vector>
 
-    #include <yabi/linear_algebra.hpp>
     #include <yabi/detail/integrator_config.hpp>
+    #include <yabi/detail/nordsieck_state.hpp>
     #include <yabi/detail/replay_tape.hpp>
+    #include <yabi/linear_algebra.hpp>
 
 namespace yabi {
 
@@ -148,10 +149,14 @@ template <class Scalar> class BDFIntegrator {
     // step/order controller already track, exposed as read-only getters) ----
 
     // BDF order of the last accepted step (1..MAXORDER).
-    unsigned int getCurrentOrder() const { return order_corrector; }
+    unsigned int getCurrentOrder() const {
+        return nordsieck.order_corrector;
+    }
 
     // Step size of the last accepted step (== the size of the next step).
-    Scalar getCurrentStepSize() const { return step_size_h; }
+    Scalar getCurrentStepSize() const {
+        return nordsieck.step_size_h;
+    }
 
     // Total nonlinear (Newton) iterations performed across the integration.
     unsigned int getNewtonIterations() const { return stats.newtonIterations; }
@@ -197,10 +202,6 @@ template <class Scalar> class BDFIntegrator {
     inline bool calculate_error_weights(Scalar *errorWeights, Scalar *yWeight,
                                         Scalar *absoluteError, Scalar &relativeError);
 
-    std::vector<Scalar> z_predictor;
-    std::vector<Scalar> z_corrector;
-    std::vector<Scalar> z_corrector_old;
-
     // Simultaneous Derivatives
     Scalar **z_predictor_derivatives;
     Scalar **z_corrector_derivatives;
@@ -213,19 +214,11 @@ template <class Scalar> class BDFIntegrator {
     bool isIntegrattionStarted;
     bool isIntegrattionPerformed;
 
-    unsigned int order_corrector;
-    unsigned int num_of_steps_per_order;
     unsigned int numOfSpecies;
-    Scalar step_size_h;
-    Scalar step_size_h_old;
-    Scalar t_i[2];
-    Scalar l_i[7];
 
-    std::vector<Scalar> corrector;
     // Simultaneous Derivatives
     Scalar **corrector_derivatives;
 
-    std::vector<Scalar> corrector_old;
     // Simultaneous Derivatives
     Scalar **corrector_old_derivatives;
 
@@ -238,7 +231,6 @@ template <class Scalar> class BDFIntegrator {
     Scalar *relative_error_derivatives; // non-owning: points into the user's seed array
 
     Scalar t_ende;
-    std::vector<Scalar> solution_Vector;
     // Simultaneous Derivatives
     Scalar **solution_Vector_derivatives;
 
@@ -246,7 +238,6 @@ template <class Scalar> class BDFIntegrator {
 
     // Simultaneous Derivatives
 
-    Scalar c_n_old;
     Scalar max_StepLength;
     Scalar start_integration_time;
     std::vector<Scalar> P;
@@ -263,9 +254,6 @@ template <class Scalar> class BDFIntegrator {
     unsigned int RHS_type; // 0 - Autonom; 1 time dependent; 2 time and parameter dependent;
     std::vector<Scalar> parameter;
     unsigned int sizeOfParameter;
-
-    Scalar stepSizeSet_new[6];
-    Scalar stepSizeSet_old[6];
 
     Scalar reachableError;
     std::vector<Scalar> reachableError_derivatives;
@@ -340,6 +328,10 @@ template <class Scalar> class BDFIntegrator {
     Scalar blasScalarONE;
     Scalar blasScalarMinusONE;
     Scalar blasScalarZERO;
+
+    // Nordsieck history array, step/order/time state and its algebra (see
+    // detail/nordsieck_state.hpp).
+    detail::NordsieckState<Scalar> nordsieck;
 
     // Integrator configuration and run statistics (own single-responsibility
     // value types; see detail/integrator_config.hpp).

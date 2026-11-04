@@ -80,12 +80,13 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     int sign;
 
     Scalar error_multiplier = 1.0;
-    for (i = 1; i < order_corrector; i++)
-        error_multiplier *= stepSizeSet_new[i] / (stepSizeSet_new[i] - step_size_h);
+    for (i = 1; i < nordsieck.order_corrector; i++)
+        error_multiplier *=
+            nordsieck.stepSizeSet_new[i] / (nordsieck.stepSizeSet_new[i] - nordsieck.step_size_h);
     error_multiplier += 1.0;
     // Local-error multiplier 1/alpha_0 * 1/(1 - 1/alpha_tilde_0)
     // with alpha_0 = -l_i[1]: the magnitude is l_i[1] * (1 + product).
-    error_multiplier *= l_i[1];
+    error_multiplier *= nordsieck.l_i[1];
     error_multiplier = fabs(error_multiplier);
 
     // Compute Matrix P.data()
@@ -103,7 +104,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     Scalar *root = new Scalar[numOfSpecies];
 
     for (i = 0; i < numOfSpecies; i++)
-        root[i] = z_predictor[i];
+        root[i] = nordsieck.z_predictor[i];
 
     calculate_error_weights(error_weights.data(), root, absolut_error.data(), relative_error);
 
@@ -158,7 +159,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
     convergenceResidual[1] = 0.0;
 
     for (i = 0; i < numOfSpecies; i++)
-        corrector[i] = 0.0;
+        nordsieck.corrector[i] = 0.0;
 
     Scalar *tempMACHINEprecision = new Scalar[numOfSpecies];
 
@@ -192,7 +193,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             for (i = 0; i < numOfSpecies; i++)
                 cppAD_argument[i] = root[i];
             if (RHS_type >= 1)
-                cppAD_argument[numOfSpecies] = t_i[0];
+                cppAD_argument[numOfSpecies] = nordsieck.t_i[0];
             if (RHS_type == 2)
                 for (i = 0; i < sizeOfParameter; i++)
                     cppAD_argument[numOfSpecies + 1 + i] = parameter[i];
@@ -222,9 +223,11 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                 for (k = 0; k < numOfSpecies; k++)
                     if (j == k)
                         P[k * numOfSpecies + j] =
-                            1.0 - ((step_size_h / l_i[1]) * J[j * numOfSpecies + k]);
+                            1.0 -
+                            ((nordsieck.step_size_h / nordsieck.l_i[1]) * J[j * numOfSpecies + k]);
                     else
-                        P[k * numOfSpecies + j] = -(step_size_h / l_i[1]) * J[j * numOfSpecies + k];
+                        P[k * numOfSpecies + j] =
+                            -(nordsieck.step_size_h / nordsieck.l_i[1]) * J[j * numOfSpecies + k];
 
             // LU factor (and overwrite) the matrix P.data() and ip.data() and jp via pluggable solver
             if (!calculate_newton_scaling()) {
@@ -285,9 +288,11 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                 for (k = 0; k < numOfSpecies; k++)
                     if (j == k)
                         P[k * numOfSpecies + j] =
-                            1.0 - ((step_size_h / l_i[1]) * J[j * numOfSpecies + k]);
+                            1.0 -
+                            ((nordsieck.step_size_h / nordsieck.l_i[1]) * J[j * numOfSpecies + k]);
                     else
-                        P[k * numOfSpecies + j] = -(step_size_h / l_i[1]) * J[j * numOfSpecies + k];
+                        P[k * numOfSpecies + j] =
+                            -(nordsieck.step_size_h / nordsieck.l_i[1]) * J[j * numOfSpecies + k];
 
             // LU factor (and overwrite) the matrix P.data() via pluggable solver
             if (!calculate_newton_scaling()) {
@@ -345,7 +350,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         for (j = 0; j < numOfSpecies; j++)
             cppAD_argument[j] = root[j];
         if (RHS_type >= 1)
-            cppAD_argument[numOfSpecies] = t_i[0];
+            cppAD_argument[numOfSpecies] = nordsieck.t_i[0];
         if (RHS_type == 2)
             for (j = 0; j < sizeOfParameter; j++)
                 cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
@@ -367,15 +372,16 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
         for (j = 0; j < numOfSpecies; j++) {
             temp[j] = rhs[j];
-            b[j] = z_predictor[numOfSpecies + j];
+            b[j] = nordsieck.z_predictor[numOfSpecies + j];
         }
-        Scalar blasTEMP1 = 1.0 / l_i[1];
-        Scalar blasTEMP2 = -step_size_h / l_i[1];
+        Scalar blasTEMP1 = 1.0 / nordsieck.l_i[1];
+        Scalar blasTEMP2 = -nordsieck.step_size_h / nordsieck.l_i[1];
 
         linalg::SCAL(numOfSpecies, blasTEMP1, b, blasONE);
         linalg::AXPY(numOfSpecies, blasTEMP2, temp, blasONE, b, blasONE);
         linalg::AXPY(numOfSpecies, blasScalarONE, root, blasONE, b, blasONE);
-        linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor.data(), blasONE, b, blasONE);
+        linalg::AXPY(numOfSpecies, blasScalarMinusONE, nordsieck.z_predictor.data(), blasONE, b,
+                     blasONE);
         for (j = 0; j < numOfSpecies; j++)
             b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
@@ -393,7 +399,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
 
         linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, root, blasONE);
-        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, corrector.data(), blasONE);
+        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, nordsieck.corrector.data(),
+                     blasONE);
 
         if (numOfDerivatives > 0 && !direct) {
             for (z = 0; z < numOfDerivatives; z++) {
@@ -499,7 +506,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (i = 0; i < numOfSpecies; i++)
                                 endTAPE->endSolution[i] = root[i];
 
-                            endTAPE->timePoint = t_i[0];
+                            endTAPE->timePoint = nordsieck.t_i[0];
                         } else
                             endTAPE->NewtonIterates = newtonIterate;
                     }
@@ -537,7 +544,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         for (j = 0; j < numOfSpecies; j++)
                             cppAD_argument[j] = root[j];
                         if (RHS_type >= 1)
-                            cppAD_argument[numOfSpecies] = t_i[0];
+                            cppAD_argument[numOfSpecies] = nordsieck.t_i[0];
                         if (RHS_type == 2)
                             for (j = 0; j < sizeOfParameter; j++)
                                 cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
@@ -604,10 +611,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (k = 0; k < numOfSpecies; k++) {
                                 if (j == k)
                                     P_[k * numOfSpecies + j] =
-                                        1 - ((step_size_h / l_i[1]) * J_[j * numOfSpecies + k]);
+                                        1 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                             J_[j * numOfSpecies + k]);
                                 else
                                     P_[k * numOfSpecies + j] =
-                                        -(step_size_h / l_i[1]) * J_[j * numOfSpecies + k];
+                                        -(nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                        J_[j * numOfSpecies + k];
                             }
 
                         for (j = 0; j < numOfSpecies; j++)
@@ -695,8 +704,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (j = 0; j < numOfSpecies; j++)
                                 b[j] = -(Scalar)scalbn(
                                     ((-z_predictor_derivatives[z][j]) -
-                                     (((step_size_h / l_i[1]) * df[j]) -
-                                      (z_predictor_derivatives[z][numOfSpecies + j] / l_i[1]))),
+                                     (((nordsieck.step_size_h / nordsieck.l_i[1]) * df[j]) -
+                                      (z_predictor_derivatives[z][numOfSpecies + j] /
+                                       nordsieck.l_i[1]))),
                                     scaling_D1_[j]);
 
                             linalg::GETRS_NT(numOfSpecies, blasONE, P_, numOfSpecies, ip_, b,
@@ -787,7 +797,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (i = 0; i < numOfSpecies; i++)
                                 endTAPE->endSolution[i] = root[i];
 
-                            endTAPE->timePoint = t_i[0];
+                            endTAPE->timePoint = nordsieck.t_i[0];
                         } else
                             endTAPE->NewtonIterates = newtonIterate;
                     }
@@ -825,7 +835,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         for (j = 0; j < numOfSpecies; j++)
                             cppAD_argument[j] = root[j];
                         if (RHS_type >= 1)
-                            cppAD_argument[numOfSpecies] = t_i[0];
+                            cppAD_argument[numOfSpecies] = nordsieck.t_i[0];
                         if (RHS_type == 2)
                             for (j = 0; j < sizeOfParameter; j++)
                                 cppAD_argument[numOfSpecies + 1 + j] = parameter[j];
@@ -892,10 +902,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (k = 0; k < numOfSpecies; k++) {
                                 if (j == k)
                                     P_[k * numOfSpecies + j] =
-                                        1.0 - ((step_size_h / l_i[1]) * J_[j * numOfSpecies + k]);
+                                        1.0 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                               J_[j * numOfSpecies + k]);
                                 else
                                     P_[k * numOfSpecies + j] =
-                                        -(step_size_h / l_i[1]) * J_[j * numOfSpecies + k];
+                                        -(nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                        J_[j * numOfSpecies + k];
                             }
 
                         for (j = 0; j < numOfSpecies; j++)
@@ -983,8 +995,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             for (j = 0; j < numOfSpecies; j++)
                                 b[j] = -(Scalar)scalbn(
                                     ((-z_predictor_derivatives[z][j]) -
-                                     (((step_size_h / l_i[1]) * df[j]) -
-                                      (z_predictor_derivatives[z][numOfSpecies + j] / l_i[1]))),
+                                     (((nordsieck.step_size_h / nordsieck.l_i[1]) * df[j]) -
+                                      (z_predictor_derivatives[z][numOfSpecies + j] /
+                                       nordsieck.l_i[1]))),
                                     scaling_D1_[j]);
 
                             linalg::GETRS_NT(numOfSpecies, blasONE, P_, numOfSpecies, ip_, b,
@@ -1034,8 +1047,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     contructionRateFulfilled = false;
                     setJacobian = true;
                     for (i = 0; i < numOfSpecies; i++) {
-                        corrector[i] = 0.0;
-                        root[i] = z_predictor[i];
+                        nordsieck.corrector[i] = 0.0;
+                        root[i] = nordsieck.z_predictor[i];
                     }
                     if (numOfDerivatives > 0 && !direct)
                         for (z = 0; z < numOfDerivatives; z++) {
@@ -1052,8 +1065,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     contructionRateFulfilled = false;
                     setNewP = true;
                     for (i = 0; i < numOfSpecies; i++) {
-                        root[i] = z_predictor[i];
-                        corrector[i] = 0.0;
+                        root[i] = nordsieck.z_predictor[i];
+                        nordsieck.corrector[i] = 0.0;
                     }
                     if (numOfDerivatives > 0 && !direct)
                         for (z = 0; z < numOfDerivatives; z++) {
@@ -1093,52 +1106,32 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_corrector() {
-    unsigned int i, j, z;
-
-    for (i = 0; i < numOfSpecies; i++)
-        for (j = 0; j <= order_corrector; j++)
-            z_corrector[numOfSpecies * j + i] = z_predictor[numOfSpecies * j + i];
-
-    int blasTEMP = order_corrector + 1;
-    Scalar blasTEMP2 = 1.0;
-    linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, corrector.data(), blasONE, l_i, blasONE, z_corrector.data(),
-                numOfSpecies);
-
-    if (numOfDerivatives > 0)
-        for (z = 0; z < numOfDerivatives; z++) {
-            for (i = 0; i < numOfSpecies; i++)
-                for (j = 0; j <= order_corrector; j++)
-                    z_corrector_derivatives[z][numOfSpecies * j + i] =
-                        z_predictor_derivatives[z][numOfSpecies * j + i];
-            blasTEMP = order_corrector + 1;
-            blasTEMP2 = 1.0;
-            linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, corrector_derivatives[z], blasONE, l_i,
-                        blasONE, z_corrector_derivatives[z], numOfSpecies);
-        }
-
-    return true;
+    return nordsieck.calculate_next_corrector(numOfSpecies, numOfDerivatives, corrector_derivatives,
+                                              z_predictor_derivatives, z_corrector_derivatives);
 }
 
 template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_vector() {
-    if (convergenceIndicator < 0 && !(step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1])) {
-        num_of_steps_per_order = 0;
+    if (convergenceIndicator < 0 &&
+        !(nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1])) {
+        nordsieck.num_of_steps_per_order = 0;
 
         if (newtonFAIL > config.allowedNEWTON)
             return 3;
         newtonFAIL += 1;
         stats.rejectedNewtonSteps++;
         Scalar eta = config.NEWTON_STEP_REDUCTION;
-        step_size_h = step_size_h * eta;
+        nordsieck.step_size_h = nordsieck.step_size_h * eta;
 
-        if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+        if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
             YABI_LOG_ERROR("relaxing step size!");
 
-            step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+            nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
         }
-        t_i[0] = step_size_h + t_i[1];
+        nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
         return 0; // repeat step
     }
-    if (convergenceIndicator < 0 && (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1])) {
+    if (convergenceIndicator < 0 &&
+        (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1])) {
         YABI_LOG_ERROR("WARNING: accept newton iteration due to minimal step size");
     }
     unsigned int i, z;
@@ -1146,18 +1139,19 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
     Scalar temp1;
     temp1 = 1.0;
-    for (i = 1; i < order_corrector; i++)
-        temp1 *= stepSizeSet_new[i] / (stepSizeSet_new[i] - step_size_h);
+    for (i = 1; i < nordsieck.order_corrector; i++)
+        temp1 *=
+            nordsieck.stepSizeSet_new[i] / (nordsieck.stepSizeSet_new[i] - nordsieck.step_size_h);
     temp1 += 1.0;
     // |LE| = |e| / (l_i[1] * (1 + product)); see the local-error
     // estimator in the dissertation (alpha_0 = -l_i[1]).
-    temp1 *= l_i[1];
+    temp1 *= nordsieck.l_i[1];
 
     Scalar *temp2 = new Scalar[numOfSpecies];
 
     for (i = 0; i < numOfSpecies; i++)
-        temp2[i] = z_predictor[i];
-    linalg::AXPY(numOfSpecies, blasScalarONE, corrector.data(), blasONE, temp2, blasONE);
+        temp2[i] = nordsieck.z_predictor[i];
+    linalg::AXPY(numOfSpecies, blasScalarONE, nordsieck.corrector.data(), blasONE, temp2, blasONE);
     calculate_error_weights(error_weights.data(), temp2, absolut_error.data(), relative_error);
     for (i = 0; i < numOfSpecies; i++)
         temp2[i] /= error_weights[i];
@@ -1170,7 +1164,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         YABI_LOG_ERROR("WARNING: relax error threshold due to limiting machine precision");
 
     for (i = 0; i < numOfSpecies; i++)
-        temp2[i] = corrector[i] / temp1 / error_weights[i];
+        temp2[i] = nordsieck.corrector[i] / temp1 / error_weights[i];
 
     Scalar normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
     Scalar *normWeightedLocalTruncError_derivatives = NULL;
@@ -1208,7 +1202,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         }
     }
     delete[] temp2;
-    if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+    if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
         pass = true;
 
         std::cout << "WARNING: accept step due to limiting minimal step size";
@@ -1218,18 +1212,18 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
         Scalar mu = config.ORDER_STAY_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
         Scalar sumTemp = 0.0;
-        for (i = 1; i <= order_corrector; i++)
+        for (i = 1; i <= nordsieck.order_corrector; i++)
             sumTemp += (1.0 / i);
 
         minimalEta = sumTemp;
         sumTemp = 0.0;
-        for (i = 0; i < order_corrector; i++)
-            sumTemp += (step_size_h / stepSizeSet_new[i]);
+        for (i = 0; i < nordsieck.order_corrector; i++)
+            sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
         minimalEta /= sumTemp;
-        for (i = 2; i <= order_corrector; i++)
-            minimalEta *= stepSizeSet_new[i - 1] / step_size_h / i;
-        minimalEta = pow(minimalEta, 1.0 / (order_corrector + 1));
-        minimalEta *= pow(mu, 1.0 / (order_corrector + 1));
+        for (i = 2; i <= nordsieck.order_corrector; i++)
+            minimalEta *= nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
+        minimalEta = pow(minimalEta, 1.0 / (nordsieck.order_corrector + 1));
+        minimalEta *= pow(mu, 1.0 / (nordsieck.order_corrector + 1));
 
         if (numOfDerivatives > 0) {
             Scalar minimalEta_derivatives = 0.0;
@@ -1237,64 +1231,66 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                 mu = config.ORDER_STAY_SAVETY_STEP *
                      (reachableError_derivatives[z] / normWeightedLocalTruncError_derivatives[z]);
                 sumTemp = 0.0;
-                for (i = 1; i <= order_corrector; i++)
+                for (i = 1; i <= nordsieck.order_corrector; i++)
                     sumTemp += (1.0 / i);
                 minimalEta_derivatives = sumTemp;
                 sumTemp = 0;
-                for (i = 0; i < order_corrector; i++)
-                    sumTemp += (step_size_h / stepSizeSet_new[i]);
+                for (i = 0; i < nordsieck.order_corrector; i++)
+                    sumTemp += (nordsieck.step_size_h / nordsieck.stepSizeSet_new[i]);
                 minimalEta_derivatives /= sumTemp;
-                for (i = 2; i <= order_corrector; i++)
-                    minimalEta_derivatives *= stepSizeSet_new[i - 1] / step_size_h / i;
-                minimalEta_derivatives = pow(minimalEta_derivatives, 1.0 / (order_corrector + 1));
-                minimalEta_derivatives *= pow(mu, 1.0 / (order_corrector + 1));
+                for (i = 2; i <= nordsieck.order_corrector; i++)
+                    minimalEta_derivatives *=
+                        nordsieck.stepSizeSet_new[i - 1] / nordsieck.step_size_h / i;
+                minimalEta_derivatives =
+                    pow(minimalEta_derivatives, 1.0 / (nordsieck.order_corrector + 1));
+                minimalEta_derivatives *= pow(mu, 1.0 / (nordsieck.order_corrector + 1));
                 if (minimalEta > minimalEta_derivatives)
                     minimalEta = minimalEta_derivatives;
             }
             delete[] normWeightedLocalTruncError_derivatives;
         }
 
-        if (order_corrector == 1)
+        if (nordsieck.order_corrector == 1)
             if (minimalEta > config.RESTRICT_ORDER_1_RATIO)
                 minimalEta = config.RESTRICT_ORDER_1_RATIO;
 
-        if (order_corrector == 2)
+        if (nordsieck.order_corrector == 2)
             if (minimalEta > config.RESTRICT_ORDER_2_RATIO)
                 minimalEta = config.RESTRICT_ORDER_2_RATIO;
 
-        if (order_corrector == 3)
+        if (nordsieck.order_corrector == 3)
             if (minimalEta > config.RESTRICT_ORDER_3_RATIO)
                 minimalEta = config.RESTRICT_ORDER_3_RATIO;
 
-        if (order_corrector == 4)
+        if (nordsieck.order_corrector == 4)
             if (minimalEta > config.RESTRICT_ORDER_4_RATIO)
                 minimalEta = config.RESTRICT_ORDER_4_RATIO;
 
-        if (order_corrector == 5)
+        if (nordsieck.order_corrector == 5)
             if (minimalEta > config.RESTRICT_ORDER_5_RATIO)
                 minimalEta = config.RESTRICT_ORDER_5_RATIO;
 
-        if (order_corrector == 6)
+        if (nordsieck.order_corrector == 6)
             if (minimalEta > config.RESTRICT_ORDER_6_RATIO)
                 minimalEta = config.RESTRICT_ORDER_6_RATIO;
 
         if (taping) {
-            endTAPE->timePoint = t_i[0];
-            endTAPE->stepSize = step_size_h;
+            endTAPE->timePoint = nordsieck.t_i[0];
+            endTAPE->stepSize = nordsieck.step_size_h;
         }
 
         // ACCEPTING STEP
-        num_of_steps_per_order += 1;
-        t_i[1] = t_i[0];
-        t_i[0] = t_i[1] + step_size_h;
-        if (t_i[1] >= t_ende - 2 * config.MACHINEPRECISION * t_ende)
+        nordsieck.num_of_steps_per_order += 1;
+        nordsieck.t_i[1] = nordsieck.t_i[0];
+        nordsieck.t_i[0] = nordsieck.t_i[1] + nordsieck.step_size_h;
+        if (nordsieck.t_i[1] >= t_ende - 2 * config.MACHINEPRECISION * t_ende)
             return 2; // calculate OutPUT-Vector
         else
             return 1; // next Step
     } else {
         // NOT ACCEPTING STEP
 
-        num_of_steps_per_order = 0;
+        nordsieck.num_of_steps_per_order = 0;
 
         if (stepFAIL > config.allowedSTEPS)
             return 4;
@@ -1304,21 +1300,23 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         Scalar mu = config.STEP_NOT_ACCEPTED_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
         Scalar eta = 2.0;
         if (mu >= 0.05 && mu <= 1.0) {
-            eta = sqrt(pow(mu, Scalar(0.5 + (1.0 / (order_corrector + 1)))));
+            eta = sqrt(pow(mu, Scalar(0.5 + (1.0 / (nordsieck.order_corrector + 1)))));
         }
         if (mu < 0.05) {
             Scalar nu = 1;
-            for (i = 1; i < order_corrector; i++)
-                nu *= stepSizeSet_new[i] / step_size_h;
-            for (i = 1; i < order_corrector; i++)
-                nu /= (stepSizeSet_new[i] / step_size_h) - 1;
-            nu /= l_i[1];
+            for (i = 1; i < nordsieck.order_corrector; i++)
+                nu *= nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h;
+            for (i = 1; i < nordsieck.order_corrector; i++)
+                nu /= (nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h) - 1;
+            nu /= nordsieck.l_i[1];
             nu = sqrt(nu);
             nu -= 1;
-            nu *= pow(mu, Scalar(order_corrector - 1) / Scalar(2 * order_corrector + 2));
+            nu *= pow(mu, Scalar(nordsieck.order_corrector - 1) /
+                              Scalar(2 * nordsieck.order_corrector + 2));
             if (nu > 1)
                 nu = 1;
-            eta = nu * pow(mu, 1.0 / Scalar(order_corrector + 1)) + (1 - nu) * pow(mu, 0.5);
+            eta =
+                nu * pow(mu, 1.0 / Scalar(nordsieck.order_corrector + 1)) + (1 - nu) * pow(mu, 0.5);
         }
         if (mu > 1.0)
             eta = 2.0;
@@ -1329,22 +1327,24 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                 mu = config.STEP_NOT_ACCEPTED_SAVETY_STEP *
                      (reachableError_derivatives[z] / normWeightedLocalTruncError_derivatives[z]);
                 if (mu >= 0.05 && mu <= 1.0) {
-                    eta_derivatives = sqrt(pow(mu, Scalar(0.5 + (1.0 / (order_corrector + 1)))));
+                    eta_derivatives =
+                        sqrt(pow(mu, Scalar(0.5 + (1.0 / (nordsieck.order_corrector + 1)))));
                 }
                 if (mu < 0.05) {
                     Scalar nu = 1;
-                    for (i = 1; i < order_corrector; i++)
-                        nu *= stepSizeSet_new[i] / step_size_h;
-                    for (i = 1; i < order_corrector; i++)
-                        nu /= (stepSizeSet_new[i] / step_size_h) - 1;
-                    nu /= l_i[1];
+                    for (i = 1; i < nordsieck.order_corrector; i++)
+                        nu *= nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h;
+                    for (i = 1; i < nordsieck.order_corrector; i++)
+                        nu /= (nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h) - 1;
+                    nu /= nordsieck.l_i[1];
                     nu = sqrt(nu);
                     nu -= 1.0;
-                    nu *= pow(mu, Scalar(order_corrector - 1) / Scalar(2 * order_corrector + 2));
+                    nu *= pow(mu, Scalar(nordsieck.order_corrector - 1) /
+                                      Scalar(2 * nordsieck.order_corrector + 2));
                     if (nu > 1.0)
                         nu = 1.0;
-                    eta_derivatives =
-                        nu * pow(mu, 1.0 / Scalar(order_corrector + 1)) + (1.0 - nu) * pow(mu, 0.5);
+                    eta_derivatives = nu * pow(mu, 1.0 / Scalar(nordsieck.order_corrector + 1)) +
+                                      (1.0 - nu) * pow(mu, 0.5);
                 }
                 if (mu > 1.0)
                     eta_derivatives = 2.0;
@@ -1363,20 +1363,23 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         // from the highest Nordsieck term and, if dropping the order gives a smaller (or already
         // acceptable) error, reduce the order instead of only shrinking the step. The reduction is
         // recorded in the tape (orderDOWN marker below) so the sensitivity replay reconstructs it.
-        if (order_corrector > config.MINORDER) {
+        if (nordsieck.order_corrector > config.MINORDER) {
             Scalar c_down = -1.0;
-            for (i = 0; i < order_corrector - 1; i++)
-                c_down *= stepSizeSet_new[i] / step_size_h;
-            c_down /= (l_i[1] - (step_size_h / stepSizeSet_new[order_corrector - 1]));
+            for (i = 0; i < nordsieck.order_corrector - 1; i++)
+                c_down *= nordsieck.stepSizeSet_new[i] / nordsieck.step_size_h;
+            c_down /=
+                (nordsieck.l_i[1] - (nordsieck.step_size_h /
+                                     nordsieck.stepSizeSet_new[nordsieck.order_corrector - 1]));
             Scalar *err_down = new Scalar[numOfSpecies];
             for (i = 0; i < numOfSpecies; i++)
-                err_down[i] = z_corrector[numOfSpecies * order_corrector + i] * c_down / error_weights[i];
+                err_down[i] = nordsieck.z_corrector[numOfSpecies * nordsieck.order_corrector + i] *
+                              c_down / error_weights[i];
             Scalar norm_err_down = linalg::NRM2(numOfSpecies, err_down, blasONE) / numOfSpecies;
             delete[] err_down;
             if (norm_err_down < normWeightedLocalTruncError || norm_err_down <= reachableError) {
-                order_corrector -= 1;
+                nordsieck.order_corrector -= 1;
                 stepFAIL = 0;
-                YABI_LOG_WARN("reducing BDF order to ", order_corrector,
+                YABI_LOG_WARN("reducing BDF order to ", nordsieck.order_corrector,
                               " (order-1 error estimate)");
 
                 // Record the mid-step order reduction in the sensitivity tape so the replay
@@ -1386,8 +1389,8 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                     ReplayTape *marker = replayTapeStore.create();
                     marker->CppAD_tape.assign(config.MAXNEWTONITERATION, nullptr);
                     marker->orderDOWN = true;
-                    marker->stepSize = step_size_h;
-                    marker->timePoint = t_i[1];
+                    marker->stepSize = nordsieck.step_size_h;
+                    marker->timePoint = nordsieck.t_i[1];
                     marker->forwardLINK = endTAPE;
                     marker->backLINK = endTAPE->backLINK;
                     if (endTAPE->backLINK != nullptr)
@@ -1404,13 +1407,13 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
             YABI_LOG_ERROR("force step size reduction!");
         }
-        step_size_h = step_size_h * eta;
-        if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
+        nordsieck.step_size_h = nordsieck.step_size_h * eta;
+        if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
             YABI_LOG_ERROR("relaxing step size!");
 
-            step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
+            nordsieck.step_size_h = 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1];
         }
-        t_i[0] = step_size_h + t_i[1];
+        nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
 
         if (numOfDerivatives > 0)
             delete[] normWeightedLocalTruncError_derivatives;

@@ -55,22 +55,10 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
         sizeOfParameter = RHS->Domain() - numOfSpecies - 1;
     }
     parameter.resize(sizeOfParameter);
-    corrector.resize(numOfSpecies);
+    nordsieck.initialize(numOfSpecies);
 
-    z_corrector.clear();
-    z_predictor.clear();
-    z_corrector_old.clear();
-
-    for (i = 0; i < numOfSpecies; i++)
-        corrector[i] = 1.0;
-    corrector_old.resize(numOfSpecies);
     error_weights.resize(numOfSpecies);
     absolut_error.resize(numOfSpecies);
-    solution_Vector.resize(numOfSpecies);
-    for (i = 0; i < numOfSpecies; i++)
-        solution_Vector[i] = 0;
-
-    c_n_old = 1;
 
     P.resize(numOfSpecies * numOfSpecies);
     J.resize(numOfSpecies * numOfSpecies);
@@ -201,17 +189,17 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     unsigned int i;
     max_StepLength = max_StepLength_;
     // Lege Nordsiek-Array an
-    z_corrector.resize(numOfSpecies * 7);
+    nordsieck.z_corrector.resize(numOfSpecies * 7);
 
-    z_corrector_old.resize(numOfSpecies * 7);
+    nordsieck.z_corrector_old.resize(numOfSpecies * 7);
 
-    z_predictor.resize(numOfSpecies * 7);
+    nordsieck.z_predictor.resize(numOfSpecies * 7);
 
-    order_corrector = 1;
+    nordsieck.order_corrector = 1;
 
     // Initialisiere Nordsiek-Array
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[i] = y_start[i];
+        nordsieck.z_corrector[i] = y_start[i];
 
     for (i = 0; i < numOfSpecies; i++)
         absolut_error[i] = absolut_error_[i];
@@ -220,19 +208,19 @@ bool BDFIntegrator<Scalar>::resetIntegration(
         error_weights[i] = 0.0;
     freeSimultaneousDerivatives();
     start_integration_time = 0.0;
-    t_i[1] = 0.0;
+    nordsieck.t_i[1] = 0.0;
     estimateStartStepsize();
     std::vector<Scalar> y_start_(numOfSpecies);
     for (i = 0; i < numOfSpecies; i++)
         y_start_[i] = y_start[i];
     std::vector<Scalar> rhs(numOfSpecies);
     rhs = RHS->Forward(0, y_start_);
-    t_i[0] = step_size_h;
+    nordsieck.t_i[0] = nordsieck.step_size_h;
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[numOfSpecies + i] = rhs[i] * step_size_h;
+        nordsieck.z_corrector[numOfSpecies + i] = rhs[i] * nordsieck.step_size_h;
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
-    num_of_steps_per_order = 0;
+    nordsieck.num_of_steps_per_order = 0;
     newtonIteration_Started = false;
     convergenceIndicator = 0;
     internalError = false;
@@ -249,8 +237,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
         deleteOldTape();
 
     for (i = 0; i < 6; i++)
-        stepSizeSet_new[i] = 0.0;
-    step_size_h_old = step_size_h;
+        nordsieck.stepSizeSet_new[i] = 0.0;
+    nordsieck.step_size_h_old = nordsieck.step_size_h;
 
     // Simultaneous Derivatives
     setSimultaneousDerivatives(y_seed_derivatives_, p_seed_derivatives_,
@@ -284,17 +272,17 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     max_StepLength = max_StepLength_;
     // Lege Nordsiek-Array an
 
-    z_corrector.resize(numOfSpecies * 7);
+    nordsieck.z_corrector.resize(numOfSpecies * 7);
 
-    z_corrector_old.resize(numOfSpecies * 7);
+    nordsieck.z_corrector_old.resize(numOfSpecies * 7);
 
-    z_predictor.resize(numOfSpecies * 7);
+    nordsieck.z_predictor.resize(numOfSpecies * 7);
 
-    order_corrector = 1;
+    nordsieck.order_corrector = 1;
 
     // Initialisiere Nordsiek-Array
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[i] = y_start[i];
+        nordsieck.z_corrector[i] = y_start[i];
 
     for (i = 0; i < numOfSpecies; i++)
         absolut_error[i] = absolut_error_[i];
@@ -304,11 +292,11 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     freeSimultaneousDerivatives();
 
     start_integration_time = T_start;
-    t_i[1] = T_start;
+    nordsieck.t_i[1] = T_start;
 
     estimateStartStepsize();
 
-    t_i[0] = T_start + step_size_h;
+    nordsieck.t_i[0] = T_start + nordsieck.step_size_h;
 
     unsigned int cppAD_argument_size = 0;
 
@@ -326,10 +314,10 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     rhs = RHS->Forward(0, y_start_);
 
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[numOfSpecies + i] = rhs[i] * step_size_h;
+        nordsieck.z_corrector[numOfSpecies + i] = rhs[i] * nordsieck.step_size_h;
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
-    num_of_steps_per_order = 0;
+    nordsieck.num_of_steps_per_order = 0;
     newtonIteration_Started = false;
     convergenceIndicator = 0;
     internalError = false;
@@ -346,8 +334,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
         deleteOldTape();
 
     for (i = 0; i < 6; i++)
-        stepSizeSet_new[i] = 0.0;
-    step_size_h_old = step_size_h;
+        nordsieck.stepSizeSet_new[i] = 0.0;
+    nordsieck.step_size_h_old = nordsieck.step_size_h;
     setSimultaneousDerivatives(y_seed_derivatives_, p_seed_derivatives_,
                                relative_error_derivatives_, absolut_error_derivatives_,
                                numOfDerivatives_);
@@ -378,17 +366,17 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 
     // Lege Nordsiek-Array an
 
-    z_corrector.resize(numOfSpecies * 7);
+    nordsieck.z_corrector.resize(numOfSpecies * 7);
 
-    z_corrector_old.resize(numOfSpecies * 7);
+    nordsieck.z_corrector_old.resize(numOfSpecies * 7);
 
-    z_predictor.resize(numOfSpecies * 7);
+    nordsieck.z_predictor.resize(numOfSpecies * 7);
 
-    order_corrector = 1;
+    nordsieck.order_corrector = 1;
 
     // Initialisiere Nordsiek-Array
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[i] = y_start[i];
+        nordsieck.z_corrector[i] = y_start[i];
 
     for (i = 0; i < numOfSpecies; i++)
         absolut_error[i] = absolut_error_[i];
@@ -398,11 +386,11 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     freeSimultaneousDerivatives();
 
     start_integration_time = T_start;
-    t_i[1] = T_start;
+    nordsieck.t_i[1] = T_start;
 
     estimateStartStepsize();
 
-    t_i[0] = T_start + step_size_h;
+    nordsieck.t_i[0] = T_start + nordsieck.step_size_h;
 
     unsigned int cppAD_argument_size = 0;
 
@@ -426,10 +414,10 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     rhs = RHS->Forward(0, y_start_);
 
     for (i = 0; i < numOfSpecies; i++)
-        z_corrector[numOfSpecies + i] = rhs[i] * step_size_h;
+        nordsieck.z_corrector[numOfSpecies + i] = rhs[i] * nordsieck.step_size_h;
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
-    num_of_steps_per_order = 0;
+    nordsieck.num_of_steps_per_order = 0;
     newtonIteration_Started = false;
     convergenceIndicator = 0;
     internalError = false;
@@ -446,8 +434,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
         deleteOldTape();
 
     for (i = 0; i < 6; i++)
-        stepSizeSet_new[i] = 0.0;
-    step_size_h_old = step_size_h;
+        nordsieck.stepSizeSet_new[i] = 0.0;
+    nordsieck.step_size_h_old = nordsieck.step_size_h;
     setSimultaneousDerivatives(y_seed_derivatives_, p_seed_derivatives_,
                                relative_error_derivatives_, absolut_error_derivatives_,
                                numOfDerivatives_);
@@ -486,7 +474,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
         return false;
     }
 
-    if (t_i[1] >= t_ende) {
+    if (nordsieck.t_i[1] >= t_ende) {
         calculate_output_vector();
         return true;
     }
@@ -496,7 +484,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
     accept_indicator = 0;
     for (i = 0; i < maximal_Stepsize; i++) {
         for (j = 0; j < numOfSpecies; j++)
-            corrector_old[j] = corrector[j];
+            nordsieck.corrector_old[j] = nordsieck.corrector[j];
 
         if (numOfDerivatives > 0)
             for (z = 0; z < numOfDerivatives; z++)
@@ -518,50 +506,52 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
 
             tape->calculate_output = false;
             tape->stepSize = 0.0;
-            tape->timePoint = t_i[1];
+            tape->timePoint = nordsieck.t_i[1];
             tape->orderUP = false;
             tape->orderDOWN = false;
         }
 
         // SAVE INITIAL STEPSIZE_SET & Z_CORRECTOR
         for (j = 0; j < 6; j++)
-            stepSizeSet_old[j] = stepSizeSet_new[j];
+            nordsieck.stepSizeSet_old[j] = nordsieck.stepSizeSet_new[j];
         for (j = 0; j < numOfSpecies; j++) {
-            for (z = 0; z <= order_corrector; z++)
-                z_corrector_old[z * numOfSpecies + j] = z_corrector[z * numOfSpecies + j];
-            for (z = order_corrector + 1; z < 7; z++)
-                z_corrector_old[z * numOfSpecies + j] = 0.0;
+            for (z = 0; z <= nordsieck.order_corrector; z++)
+                nordsieck.z_corrector_old[z * numOfSpecies + j] =
+                    nordsieck.z_corrector[z * numOfSpecies + j];
+            for (z = nordsieck.order_corrector + 1; z < 7; z++)
+                nordsieck.z_corrector_old[z * numOfSpecies + j] = 0.0;
         }
         if (numOfDerivatives > 0) {
             for (z = 0; z < numOfDerivatives; z++)
                 for (j = 0; j < numOfSpecies; j++) {
-                    for (k = 0; k <= order_corrector; k++)
+                    for (k = 0; k <= nordsieck.order_corrector; k++)
                         z_corrector_derivatives_old[z][numOfSpecies * k + j] =
                             z_corrector_derivatives[z][numOfSpecies * k + j];
-                    for (k = order_corrector + 1; k < 7; k++)
+                    for (k = nordsieck.order_corrector + 1; k < 7; k++)
                         z_corrector_derivatives_old[z][numOfSpecies * k + j] = 0.0;
                 }
         }
         newtonFAIL = 0;
         stepFAIL = 0;
         while (accept_indicator == 0) {
-            if (step_size_h != step_size_h_old) {
-                Scalar temp = step_size_h / step_size_h_old;
+            if (nordsieck.step_size_h != nordsieck.step_size_h_old) {
+                Scalar temp = nordsieck.step_size_h / nordsieck.step_size_h_old;
                 for (j = 0; j < numOfSpecies; j++)
-                    for (z = 0; z <= order_corrector; z++)
-                        z_corrector[z * numOfSpecies + j] =
-                            z_corrector_old[z * numOfSpecies + j] * (Scalar)pow(temp, z);
+                    for (z = 0; z <= nordsieck.order_corrector; z++)
+                        nordsieck.z_corrector[z * numOfSpecies + j] =
+                            nordsieck.z_corrector_old[z * numOfSpecies + j] * (Scalar)pow(temp, z);
                 if (numOfDerivatives > 0)
                     for (z = 0; z < numOfDerivatives; z++)
                         for (j = 0; j < numOfSpecies; j++)
-                            for (k = 0; k <= order_corrector; k++)
+                            for (k = 0; k <= nordsieck.order_corrector; k++)
                                 z_corrector_derivatives[z][numOfSpecies * k + j] =
                                     z_corrector_derivatives_old[z][numOfSpecies * k + j] *
                                     (Scalar)pow(temp, k);
             }
             for (j = 5; j > 0; j--)
-                stepSizeSet_new[j] = stepSizeSet_old[j - 1] + step_size_h;
-            stepSizeSet_new[0] = step_size_h;
+                nordsieck.stepSizeSet_new[j] =
+                    nordsieck.stepSizeSet_old[j - 1] + nordsieck.step_size_h;
+            nordsieck.stepSizeSet_new[0] = nordsieck.step_size_h;
             if (!calculate_next_predictor()) {
                 internalError = true;
 
@@ -586,7 +576,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
             accept_indicator = accept_corrector_vector();
         }
         calculate_next_corrector();
-        step_size_h_old = step_size_h;
+        nordsieck.step_size_h_old = nordsieck.step_size_h;
         if (accept_indicator == 1)
             prepare_next_step();
         if (accept_indicator == 2) {
@@ -618,7 +608,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
 template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionVector(Scalar *solution_Vector_) {
     unsigned int i;
     for (i = 0; i < numOfSpecies; i++)
-        solution_Vector_[i] = solution_Vector[i];
+        solution_Vector_[i] = nordsieck.solution_Vector[i];
     return true;
 }
 
@@ -636,25 +626,25 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionAt(Scalar t,
     // with the last step size step_size_h:
     //     y(t) = sum_j z_corrector[n*j + i] * theta^j,   theta = (t - t_i[1]) / step_size_h.
     // It is only accurate within the completed step theta in [-1, 0].
-    const Scalar theta = (t - t_i[1]) / step_size_h;
+    const Scalar theta = (t - nordsieck.t_i[1]) / nordsieck.step_size_h;
     if (theta < -1.0 - 4.0 * config.MACHINEPRECISION || theta > 4.0 * config.MACHINEPRECISION) {
         YABI_LOG_ERROR("getSolutionAt: t = ", t, " is outside the last step [",
-                       t_i[1] - step_size_h, ", ", t_i[1], "]!");
+                       nordsieck.t_i[1] - nordsieck.step_size_h, ", ", nordsieck.t_i[1], "]!");
 
         return false;
     }
 
     unsigned int i, j;
     Scalar temp[7];
-    for (i = 0; i <= order_corrector; i++) {
+    for (i = 0; i <= nordsieck.order_corrector; i++) {
         temp[i] = 1.0;
         for (j = 0; j < i; j++)
             temp[i] *= theta;
     }
 
-    int blasTEMP = order_corrector + 1;
-    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector.data(), numOfSpecies, temp, blasONE,
-                    blasScalarZERO, solution_Vector_at_t, blasONE);
+    int blasTEMP = nordsieck.order_corrector + 1;
+    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, nordsieck.z_corrector.data(),
+                    numOfSpecies, temp, blasONE, blasScalarZERO, solution_Vector_at_t, blasONE);
 
     return true;
 }
