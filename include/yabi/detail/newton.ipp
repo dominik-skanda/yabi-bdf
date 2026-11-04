@@ -259,14 +259,14 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
             if (taping) {
                 if (!direct) {
-                    if (endTAPE->P == NULL)
-                        endTAPE->P = new Scalar[numOfSpecies * numOfSpecies];
-                    if (endTAPE->ip == NULL)
-                        endTAPE->ip = new int[numOfSpecies];
-                    if (endTAPE->scaling_D1 == NULL)
-                        endTAPE->scaling_D1 = new long[numOfSpecies];
-                    if (endTAPE->scaling_D2 == NULL)
-                        endTAPE->scaling_D2 = new long[numOfSpecies];
+                    if (endTAPE->P.empty())
+                        endTAPE->P.resize(numOfSpecies * numOfSpecies);
+                    if (endTAPE->ip.empty())
+                        endTAPE->ip.resize(numOfSpecies);
+                    if (endTAPE->scaling_D1.empty())
+                        endTAPE->scaling_D1.resize(numOfSpecies);
+                    if (endTAPE->scaling_D2.empty())
+                        endTAPE->scaling_D2.resize(numOfSpecies);
 
                     for (i = 0; i < numOfSpecies; i++) {
                         endTAPE->scaling_D1[i] = scaling_D1[i];
@@ -322,14 +322,14 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
             if (taping) {
                 if (!direct) {
-                    if (endTAPE->P == NULL)
-                        endTAPE->P = new Scalar[numOfSpecies * numOfSpecies];
-                    if (endTAPE->ip == NULL)
-                        endTAPE->ip = new int[numOfSpecies];
-                    if (endTAPE->scaling_D1 == NULL)
-                        endTAPE->scaling_D1 = new long[numOfSpecies];
-                    if (endTAPE->scaling_D2 == NULL)
-                        endTAPE->scaling_D2 = new long[numOfSpecies];
+                    if (endTAPE->P.empty())
+                        endTAPE->P.resize(numOfSpecies * numOfSpecies);
+                    if (endTAPE->ip.empty())
+                        endTAPE->ip.resize(numOfSpecies);
+                    if (endTAPE->scaling_D1.empty())
+                        endTAPE->scaling_D1.resize(numOfSpecies);
+                    if (endTAPE->scaling_D2.empty())
+                        endTAPE->scaling_D2.resize(numOfSpecies);
 
                     for (i = 0; i < numOfSpecies; i++) {
                         endTAPE->scaling_D1[i] = scaling_D1[i];
@@ -494,8 +494,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     convergenceIndicator = (Scalar)0.1;
                     if (taping) {
                         if (direct) {
-                            if (endTAPE->endSolution == NULL)
-                                endTAPE->endSolution = new Scalar[numOfSpecies];
+                            if (endTAPE->endSolution.empty())
+                                endTAPE->endSolution.resize(numOfSpecies);
                             for (i = 0; i < numOfSpecies; i++)
                                 endTAPE->endSolution[i] = root[i];
 
@@ -614,10 +614,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             scaling_D2_[j] = 0;
 
                         if (taping) {
-                            if (endTAPE->scaling_D1 == NULL)
-                                endTAPE->scaling_D1 = new long[numOfSpecies];
-                            if (endTAPE->scaling_D2 == NULL)
-                                endTAPE->scaling_D2 = new long[numOfSpecies];
+                            if (endTAPE->scaling_D1.empty())
+                                endTAPE->scaling_D1.resize(numOfSpecies);
+                            if (endTAPE->scaling_D2.empty())
+                                endTAPE->scaling_D2.resize(numOfSpecies);
 
                             for (j = 0; j < numOfSpecies; j++)
                                 endTAPE->scaling_D2[j] = scaling_D2_[j];
@@ -663,10 +663,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         }
 
                         if (taping) {
-                            if (endTAPE->P == NULL)
-                                endTAPE->P = new Scalar[numOfSpecies * numOfSpecies];
-                            if (endTAPE->ip == NULL)
-                                endTAPE->ip = new int[numOfSpecies];
+                            if (endTAPE->P.empty())
+                                endTAPE->P.resize(numOfSpecies * numOfSpecies);
+                            if (endTAPE->ip.empty())
+                                endTAPE->ip.resize(numOfSpecies);
 
                             for (i = 0; i < numOfSpecies; i++) {
                                 endTAPE->ip[i] = ip_[i];
@@ -782,8 +782,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     convergenceIndicator = (Scalar)0.1;
                     if (taping) {
                         if (direct) {
-                            if (endTAPE->endSolution == NULL)
-                                endTAPE->endSolution = new Scalar[numOfSpecies];
+                            if (endTAPE->endSolution.empty())
+                                endTAPE->endSolution.resize(numOfSpecies);
                             for (i = 0; i < numOfSpecies; i++)
                                 endTAPE->endSolution[i] = root[i];
 
@@ -902,10 +902,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             scaling_D2_[j] = 0;
 
                         if (taping) {
-                            if (endTAPE->scaling_D1 == NULL)
-                                endTAPE->scaling_D1 = new long[numOfSpecies];
-                            if (endTAPE->scaling_D2 == NULL)
-                                endTAPE->scaling_D2 = new long[numOfSpecies];
+                            if (endTAPE->scaling_D1.empty())
+                                endTAPE->scaling_D1.resize(numOfSpecies);
+                            if (endTAPE->scaling_D2.empty())
+                                endTAPE->scaling_D2.resize(numOfSpecies);
 
                             for (j = 0; j < numOfSpecies; j++)
                                 endTAPE->scaling_D2[j] = scaling_D2_[j];
@@ -951,10 +951,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         }
 
                         if (taping) {
-                            if (endTAPE->P == NULL)
-                                endTAPE->P = new Scalar[numOfSpecies * numOfSpecies];
-                            if (endTAPE->ip == NULL)
-                                endTAPE->ip = new int[numOfSpecies];
+                            if (endTAPE->P.empty())
+                                endTAPE->P.resize(numOfSpecies * numOfSpecies);
+                            if (endTAPE->ip.empty())
+                                endTAPE->ip.resize(numOfSpecies);
 
                             for (i = 0; i < numOfSpecies; i++) {
                                 endTAPE->ip[i] = ip_[i];
@@ -1383,29 +1383,17 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                 // reconstructs the correct order. Insert an orderDOWN marker entry immediately
                 // before the current step entry (mirrors prepare_next_step's order-change marker).
                 if (taping && endTAPE != NULL) {
-                    bdf_TAPE *marker = new bdf_TAPE;
-                    marker->P = NULL;
-                    marker->endSolution = NULL;
-                    marker->direct_fun = NULL;
-                    marker->old_parameter_seed = NULL;
-                    marker->old_y_seed = NULL;
-                    marker->updatedTaylorFunction = false;
-                    marker->lastTaylorOrder = 0;
-                    marker->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
-                    for (i = 0; i < MAXNEWTONITERATION; i++)
-                        marker->CppAD_tape[i] = NULL;
-                    marker->ip = NULL;
-                    marker->scaling_D1 = NULL;
-                    marker->scaling_D2 = NULL;
-                    marker->calculate_output = false;
-                    marker->orderUP = false;
+                    ReplayTape *marker = replayTapeStore.create();
+                    marker->CppAD_tape.assign(MAXNEWTONITERATION, nullptr);
                     marker->orderDOWN = true;
                     marker->stepSize = step_size_h;
                     marker->timePoint = t_i[1];
                     marker->forwardLINK = endTAPE;
                     marker->backLINK = endTAPE->backLINK;
-                    if (endTAPE->backLINK != NULL)
+                    if (endTAPE->backLINK != nullptr)
                         endTAPE->backLINK->forwardLINK = marker;
+                    else
+                        startTAPE = marker;
                     endTAPE->backLINK = marker;
                 }
             }

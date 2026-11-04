@@ -666,42 +666,21 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
         if (endTAPE == NULL)
             return false;
-        else {
-            endTAPE->forwardLINK = new bdf_TAPE;
-            endTAPE->forwardLINK->backLINK = endTAPE;
-            endTAPE->forwardLINK->forwardLINK = NULL;
-            endTAPE = endTAPE->forwardLINK;
-        }
 
-        if (getTAPE == true)
-            if (intermediateTAPE == NULL)
-                intermediateTAPE = endTAPE;
+        ReplayTape *tape = createReplayTapeNode();
+        if (getTAPE == true && intermediateTAPE == NULL)
+            intermediateTAPE = endTAPE;
 
-        endTAPE->P = NULL;
-        endTAPE->endSolution = NULL;
-        endTAPE->direct_fun = NULL;
-
-        endTAPE->old_parameter_seed = NULL;
-        endTAPE->old_y_seed = NULL;
-        endTAPE->updatedTaylorFunction = false;
-        endTAPE->lastTaylorOrder = 0;
-
-        endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
-        for (j = 0; j < MAXNEWTONITERATION; j++)
-            endTAPE->CppAD_tape[j] = NULL;
-        endTAPE->ip = NULL;
-        endTAPE->scaling_D1 = NULL;
-        endTAPE->scaling_D2 = NULL;
-        endTAPE->calculate_output = false;
+        tape->calculate_output = false;
         if (isOrderUp) {
-            endTAPE->orderDOWN = false;
-            endTAPE->orderUP = true;
-            endTAPE->stepSize = step_size_h;
+            tape->orderDOWN = false;
+            tape->orderUP = true;
+            tape->stepSize = step_size_h;
         }
         if (isOrderDown) {
-            endTAPE->orderUP = false;
-            endTAPE->orderDOWN = true;
-            endTAPE->stepSize = step_size_h;
+            tape->orderUP = false;
+            tape->orderDOWN = true;
+            tape->stepSize = step_size_h;
         }
     }
     return true;
@@ -732,45 +711,18 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
 
     delete[] temp;
     if (taping) {
-        if (endTAPE == NULL)
-            if (startTAPE == NULL) {
-                startTAPE = new bdf_TAPE;
-                startTAPE->backLINK = NULL;
-                startTAPE->forwardLINK = NULL;
-                endTAPE = startTAPE;
-            } else
-                return false;
-        else {
-            endTAPE->forwardLINK = new bdf_TAPE;
-            endTAPE->forwardLINK->backLINK = endTAPE;
-            endTAPE->forwardLINK->forwardLINK = NULL;
-            endTAPE = endTAPE->forwardLINK;
-        }
+        if (endTAPE == NULL && startTAPE != NULL)
+            return false;
 
-        if (getTAPE == true)
-            if (intermediateTAPE == NULL)
-                intermediateTAPE = endTAPE;
+        ReplayTape *tape = createReplayTapeNode();
+        if (getTAPE == true && intermediateTAPE == NULL)
+            intermediateTAPE = endTAPE;
 
-        endTAPE->P = NULL;
-        endTAPE->endSolution = NULL;
-        endTAPE->direct_fun = NULL;
-
-        endTAPE->old_parameter_seed = NULL;
-        endTAPE->old_y_seed = NULL;
-        endTAPE->updatedTaylorFunction = false;
-        endTAPE->lastTaylorOrder = 0;
-
-        endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
-        for (j = 0; j < MAXNEWTONITERATION; j++)
-            endTAPE->CppAD_tape[j] = NULL;
-        endTAPE->ip = NULL;
-        endTAPE->scaling_D1 = NULL;
-        endTAPE->scaling_D2 = NULL;
-        endTAPE->calculate_output = true;
-        endTAPE->stepSize = step_size_h;
-        endTAPE->timePoint = t_ende;
-        endTAPE->orderUP = false;
-        endTAPE->orderDOWN = false;
+        tape->calculate_output = true;
+        tape->stepSize = step_size_h;
+        tape->timePoint = t_ende;
+        tape->orderUP = false;
+        tape->orderDOWN = false;
 
         adjointTapePointer = endTAPE;
         possible_adjoint_order = 1;

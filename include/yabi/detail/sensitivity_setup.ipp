@@ -158,60 +158,22 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::freeSimultaneousDerivativ
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
-    if (!z_corrector_tape.empty()) {
-        
-        z_corrector_tape.clear();
-    }
-    if (!z_predictor_tape.empty()) {
-        
-        z_predictor_tape.clear();
-    }
-    while (endTAPE != NULL) {
-        if (endTAPE->endSolution != NULL)
-            delete[] endTAPE->endSolution;
-        if (endTAPE->direct_fun != NULL)
-            endTAPE->direct_fun = NULL;
+    // The store owns every node (including order-change markers), so releasing
+    // the whole tape is a single clear().
+    replayTapeStore.clear();
 
-        if (endTAPE->old_parameter_seed != NULL)
-            delete[] endTAPE->old_parameter_seed;
+    startTAPE = nullptr;
+    intermediateTAPE = nullptr;
+    endTAPE = nullptr;
+    adjointTapePointer = nullptr;
 
-        if (endTAPE->old_y_seed != NULL)
-            delete[] endTAPE->old_y_seed;
+    start_CppAD_tape = nullptr;
 
-        if (endTAPE->CppAD_tape != NULL) {
-            delete[] endTAPE->CppAD_tape;
-        }
-        if (endTAPE->P != NULL)
-            delete[] endTAPE->P;
-        if (endTAPE->ip != NULL)
-            delete[] endTAPE->ip;
-        if (endTAPE->scaling_D1 != NULL)
-            delete[] endTAPE->scaling_D1;
-        if (endTAPE->scaling_D2 != NULL)
-            delete[] endTAPE->scaling_D2;
-        intermediateTAPE = endTAPE->backLINK;
-        delete endTAPE;
-        endTAPE = intermediateTAPE;
-    }
-    startTAPE = NULL;
-    intermediateTAPE = NULL;
-    endTAPE = NULL;
-
-    start_CppAD_tape = NULL;
-
-    if (!P_tape.empty())
-        
+    z_corrector_tape.clear();
+    z_predictor_tape.clear();
     P_tape.clear();
-    if (!ip_tape.empty())
-        
     ip_tape.clear();
-
-    if (!scaling_D1_tape.empty())
-        
     scaling_D1_tape.clear();
-
-    if (!scaling_D2_tape.empty())
-        
     scaling_D2_tape.clear();
 
     return true;

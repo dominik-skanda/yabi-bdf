@@ -40,6 +40,7 @@
     #include <vector>
 
     #include <yabi/linear_algebra.hpp>
+    #include <yabi/detail/replay_tape.hpp>
 
 namespace yabi {
 
@@ -272,33 +273,19 @@ template <class Scalar> class BDFIntegrator {
 
     // forward
 
-    struct bdf_TAPE {
-        Scalar timePoint;
-        Scalar stepSize;
-        AbstractRHS<Scalar> **CppAD_tape;
-        AbstractRHS<Scalar> *direct_fun;
-        Scalar *endSolution;
-        Scalar *P;
-        int *ip;
-        long *scaling_D1;
-        long *scaling_D2;
-        // NAVIGATION
-        bdf_TAPE *forwardLINK;
-        bdf_TAPE *backLINK;
-        bool calculate_output;
-        bool orderUP;
-        bool orderDOWN;
-        unsigned int NewtonIterates;
+    // Per-step replay record (see detail/replay_tape.hpp) and the pool that
+    // owns every node of the current integration.
+    using ReplayTape = detail::ReplayTape<Scalar>;
+    using ReplayTapeStore = detail::ReplayTapeStore<Scalar>;
 
-        Scalar *old_parameter_seed;
-        Scalar *old_y_seed;
-        bool updatedTaylorFunction;
-        unsigned int lastTaylorOrder;
-    };
+    // Allocate a node, initialise it, append it after endTAPE and make it the
+    // new end.  Callers keep their own "can we append?" checks.
+    ReplayTape *createReplayTapeNode();
 
-    bdf_TAPE *startTAPE;
-    bdf_TAPE *intermediateTAPE;
-    bdf_TAPE *endTAPE;
+    ReplayTape *startTAPE;
+    ReplayTape *intermediateTAPE;
+    ReplayTape *endTAPE;
+    ReplayTapeStore replayTapeStore;
 
     cppADFunListType cppADFunList;
     typename cppADFunListType::iterator intermediateCppADFunIterator;
@@ -337,7 +324,7 @@ template <class Scalar> class BDFIntegrator {
 
     // adjoint
 
-    bdf_TAPE *adjointTapePointer;
+    ReplayTape *adjointTapePointer;
 
     Scalar **solution_adjoint_species;
     Scalar **solution_adjoint_parameter;

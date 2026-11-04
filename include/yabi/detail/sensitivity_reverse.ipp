@@ -104,9 +104,9 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
         }
     }
 
-    bdf_TAPE *adjointIntermediatePointer;
-    bdf_TAPE *adjointStepSizePointer;
-    bdf_TAPE *adjointIterationMatrixPointer;
+    ReplayTape *adjointIntermediatePointer;
+    ReplayTape *adjointStepSizePointer;
+    ReplayTape *adjointIterationMatrixPointer;
 
     Scalar **z_adjoint;
     Scalar **z_adjoint_store;
@@ -342,16 +342,16 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[k], blasONE,
                              z_adjoint[k], blasONE);
 
-            if (adjointIntermediatePointer->P != NULL) {
+            if (!adjointIntermediatePointer->P.empty()) {
                 adjointIterationMatrixPointer = adjointIntermediatePointer->backLINK;
                 if (adjointIterationMatrixPointer != NULL)
-                    while (adjointIterationMatrixPointer->P == NULL) {
+                    while (adjointIterationMatrixPointer->P.empty()) {
                         adjointIterationMatrixPointer = adjointIterationMatrixPointer->backLINK;
                         if (adjointIterationMatrixPointer == NULL)
                             break;
                     }
                 if (adjointIterationMatrixPointer != NULL)
-                    if (adjointIterationMatrixPointer->P != NULL) {
+                    if (!adjointIterationMatrixPointer->P.empty()) {
                         for (i = 0; i < numOfSpecies; i++) {
                             scaling_D1_adjoint[i] = adjointIterationMatrixPointer->scaling_D1[i];
                             scaling_D2_adjoint[i] = adjointIterationMatrixPointer->scaling_D2[i];
@@ -369,8 +369,8 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
             // IF NOT EXISTING CALCULATE LU FACTORIZATION
 
             if (adjointIntermediatePointer->direct_fun == NULL) {
-                if (adjointIntermediatePointer->P == NULL)
-                    adjointIntermediatePointer->P = new Scalar[numOfSpecies * numOfSpecies];
+                if (adjointIntermediatePointer->P.empty())
+                    adjointIntermediatePointer->P.resize(numOfSpecies * numOfSpecies);
 
                 unsigned int cppAD_argument_size = 0;
 
@@ -432,10 +432,10 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                                 adjointIntermediatePointer->P[k * numOfSpecies + j];
                     }
 
-                if (adjointIntermediatePointer->scaling_D1 == NULL)
-                    adjointIntermediatePointer->scaling_D1 = new long[numOfSpecies];
-                if (adjointIntermediatePointer->scaling_D2 == NULL)
-                    adjointIntermediatePointer->scaling_D2 = new long[numOfSpecies];
+                if (adjointIntermediatePointer->scaling_D1.empty())
+                    adjointIntermediatePointer->scaling_D1.resize(numOfSpecies);
+                if (adjointIntermediatePointer->scaling_D2.empty())
+                    adjointIntermediatePointer->scaling_D2.resize(numOfSpecies);
 
                 for (j = 0; j < numOfSpecies; j++)
                     adjointIntermediatePointer->scaling_D2[j] = 0;
@@ -467,13 +467,13 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                             (Scalar)scalbn(adjointIntermediatePointer->P[j * numOfSpecies + i],
                                            adjointIntermediatePointer->scaling_D1[i]);
 
-                if (adjointIntermediatePointer->ip == NULL)
-                    adjointIntermediatePointer->ip = new int[numOfSpecies];
+                if (adjointIntermediatePointer->ip.empty())
+                    adjointIntermediatePointer->ip.resize(numOfSpecies);
 
-                // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
+                // LU factor (and overwrite) the matrix P and ip
                 int info;
-                info = linalg::GETRF(numOfSpecies, numOfSpecies, adjointIntermediatePointer->P,
-                                     numOfSpecies, adjointIntermediatePointer->ip);
+                info = linalg::GETRF(numOfSpecies, numOfSpecies, adjointIntermediatePointer->P.data(),
+                                     numOfSpecies, adjointIntermediatePointer->ip.data());
                 if (info != 0) {
                     YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", info, ")");
                     internalError = true;
@@ -538,8 +538,8 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                     correctorVector_adjoint[k][i] = (Scalar)scalbn(
                         correctorVector_adjoint[k][i], adjointIntermediatePointer->scaling_D2[i]);
                 }
-                linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P, numOfSpecies,
-                                adjointIntermediatePointer->ip, correctorVector_adjoint[k],
+                linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P.data(), numOfSpecies,
+                                adjointIntermediatePointer->ip.data(), correctorVector_adjoint[k],
                                 numOfSpecies);
 
                 for (i = 0; i < numOfSpecies; i++)
@@ -592,8 +592,8 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                     correctorVector_adjoint[0][i] = (Scalar)scalbn(
                         correctorVector_adjoint[0][i], adjointIntermediatePointer->scaling_D2[i]);
 
-                linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P, numOfSpecies,
-                                adjointIntermediatePointer->ip, correctorVector_adjoint[0],
+                linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P.data(), numOfSpecies,
+                                adjointIntermediatePointer->ip.data(), correctorVector_adjoint[0],
                                 numOfSpecies);
 
                 for (i = 0; i < numOfSpecies; i++)

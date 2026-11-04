@@ -157,7 +157,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     HITSOLUTION = false;
     updateEveryP = false;
 
-    linearSolver.reset(new DenseLUSolver<Scalar>());
+    linearSolver = std::make_unique<DenseLUSolver<Scalar>>();
     ERROR_WEIGHTS_INDEX = 1;
 
     MINTAYLOR = 1;
@@ -177,6 +177,23 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     updateJacobian = 0;
     updateP = 0;
     newtonIterations = 0;
+}
+
+// Allocate a replay-tape node, append it after the current end and make it the
+// new end.  The caller guarantees that appending is legal (see the call sites);
+// all per-step buffers start empty and the CppAD slots start null.
+template <typename Scalar>
+typename BDFIntegrator<Scalar>::ReplayTape *
+BDFIntegrator<Scalar>::createReplayTapeNode() {
+    ReplayTape *node = replayTapeStore.create();
+    node->CppAD_tape.assign(MAXNEWTONITERATION, nullptr);
+    node->backLINK = endTAPE;
+    if (endTAPE != nullptr)
+        endTAPE->forwardLINK = node;
+    else
+        startTAPE = node;
+    endTAPE = node;
+    return node;
 }
 
 template <typename Scalar>
@@ -532,45 +549,18 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
         stepFAIL = 0;
 
         if (taping) {
-            if (endTAPE == NULL)
-                if (startTAPE == NULL) {
-                    startTAPE = new bdf_TAPE;
-                    startTAPE->backLINK = NULL;
-                    startTAPE->forwardLINK = NULL;
-                    endTAPE = startTAPE;
-                } else
-                    return false;
-            else {
-                endTAPE->forwardLINK = new bdf_TAPE;
-                endTAPE->forwardLINK->backLINK = endTAPE;
-                endTAPE->forwardLINK->forwardLINK = NULL;
-                endTAPE = endTAPE->forwardLINK;
-            }
+            if (endTAPE == NULL && startTAPE != NULL)
+                return false;
 
-            if (getTAPE == true)
-                if (intermediateTAPE == NULL)
-                    intermediateTAPE = endTAPE;
+            ReplayTape *tape = createReplayTapeNode();
+            if (getTAPE == true && intermediateTAPE == NULL)
+                intermediateTAPE = endTAPE;
 
-            endTAPE->P = NULL;
-            endTAPE->endSolution = NULL;
-            endTAPE->direct_fun = NULL;
-
-            endTAPE->old_parameter_seed = NULL;
-            endTAPE->old_y_seed = NULL;
-            endTAPE->updatedTaylorFunction = false;
-            endTAPE->lastTaylorOrder = 0;
-
-            endTAPE->CppAD_tape = new AbstractRHS<Scalar> *[MAXNEWTONITERATION];
-            for (j = 0; j < MAXNEWTONITERATION; j++)
-                endTAPE->CppAD_tape[j] = NULL;
-            endTAPE->ip = NULL;
-            endTAPE->scaling_D1 = NULL;
-            endTAPE->scaling_D2 = NULL;
-            endTAPE->calculate_output = false;
-            endTAPE->stepSize = 0.0;
-            endTAPE->timePoint = t_i[1];
-            endTAPE->orderUP = false;
-            endTAPE->orderDOWN = false;
+            tape->calculate_output = false;
+            tape->stepSize = 0.0;
+            tape->timePoint = t_i[1];
+            tape->orderUP = false;
+            tape->orderDOWN = false;
         }
 
         // SAVE INITIAL STEPSIZE_SET & Z_CORRECTOR
@@ -905,54 +895,10 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
 template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
     unsigned int i;
 
-    
-    if (!P_tape.empty())
-        
+    // Releases the replay tape (nodes are owned by replayTapeStore) and the
+    // sensitivity scratch mirrors.
     linearSolver.reset();
-    P_tape.clear();
-    if (!ip_tape.empty())
-        
-    ip_tape.clear();
-    if (!scaling_D1_tape.empty())
-        
-    scaling_D1_tape.clear();
-    if (!scaling_D2_tape.empty())
-        
-    scaling_D2_tape.clear();
-    
-    if (!z_corrector_tape.empty()) {
-        
-        z_corrector_tape.clear();
-    }
-    if (!z_predictor_tape.empty()) {
-        
-        z_predictor_tape.clear();
-    }
-    if (!z_corrector_old.empty()) {
-        
-        z_corrector_old.clear();
-    }
-
     deleteOldTape();
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    if (!z_predictor.empty()) {
-        
-        z_predictor.clear();
-    }
-    if (!z_corrector.empty()) {
-        
-        z_corrector.clear();
-    }
 
     // Simultaneous Derivatives
 

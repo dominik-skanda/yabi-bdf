@@ -340,7 +340,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                                                                Scalar *parameter_seed) {
     (void)y_seed;
     unsigned int i, j, k;
-    if (intermediateTAPE->P != NULL && !direct) {
+    if (!intermediateTAPE->P.empty() && !direct) {
         for (i = 0; i < numOfSpecies; i++) {
             scaling_D1_tape[i] = intermediateTAPE->scaling_D1[i];
             scaling_D2_tape[i] = intermediateTAPE->scaling_D2[i];
@@ -476,10 +476,10 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                                 -(step_size_h_tape / l_i_tape[1]) * J_[j * numOfSpecies + k];
                     }
 
-                if (intermediateTAPE->scaling_D1 == NULL)
-                    intermediateTAPE->scaling_D1 = new long[numOfSpecies];
-                if (intermediateTAPE->scaling_D2 == NULL)
-                    intermediateTAPE->scaling_D2 = new long[numOfSpecies];
+                if (intermediateTAPE->scaling_D1.empty())
+                    intermediateTAPE->scaling_D1.resize(numOfSpecies);
+                if (intermediateTAPE->scaling_D2.empty())
+                    intermediateTAPE->scaling_D2.resize(numOfSpecies);
 
                 for (j = 0; j < numOfSpecies; j++)
                     intermediateTAPE->scaling_D2[j] = 0;
@@ -520,10 +520,10 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                     return false;
                 }
 
-                if (intermediateTAPE->P == NULL)
-                    intermediateTAPE->P = new Scalar[numOfSpecies * numOfSpecies];
-                if (intermediateTAPE->ip == NULL)
-                    intermediateTAPE->ip = new int[numOfSpecies];
+                if (intermediateTAPE->P.empty())
+                    intermediateTAPE->P.resize(numOfSpecies * numOfSpecies);
+                if (intermediateTAPE->ip.empty())
+                    intermediateTAPE->ip.resize(numOfSpecies);
 
                 for (i = 0; i < numOfSpecies; i++) {
                     intermediateTAPE->ip[i] = ip_[i];
@@ -538,10 +538,10 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
                 }
             }
 
-            if (intermediateTAPE->old_parameter_seed == NULL)
-                intermediateTAPE->old_parameter_seed = new Scalar[sizeOfParameter];
-            if (intermediateTAPE->old_y_seed == NULL)
-                intermediateTAPE->old_y_seed = new Scalar[numOfSpecies];
+            if (intermediateTAPE->old_parameter_seed.empty())
+                intermediateTAPE->old_parameter_seed.resize(sizeOfParameter);
+            if (intermediateTAPE->old_y_seed.empty())
+                intermediateTAPE->old_y_seed.resize(numOfSpecies);
 
             if (order == 1) {
                 for (j = 0; j < numOfSpecies; j++)
