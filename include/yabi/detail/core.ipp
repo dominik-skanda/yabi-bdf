@@ -29,7 +29,14 @@ namespace yabi {
 
 template <typename Scalar>
 BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
-    : stepController(nordsieck, config) {
+    : stepController(nordsieck, config),
+      newtonSolver(nordsieck, config, stats, RHS, linearSolver, numOfSpecies, RHS_type,
+                   sizeOfParameter, parameter, error_weights, absolut_error, relative_error,
+                   error_weights_derivatives, absolut_error_derivatives, relative_error_derivatives,
+                   t_ende, minimalEta, reachableError, reachableError_derivatives, numOfDerivatives,
+                   direct, taping, z_predictor_derivatives, corrector_derivatives,
+                   p_seed_derivatives, startTAPE, endTAPE, replayTapeStore, cppADFunList,
+                   intermediateCppADFunIterator, internalError) {
     unsigned int i;
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
@@ -62,14 +69,14 @@ BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
     error_weights.resize(numOfSpecies);
     absolut_error.resize(numOfSpecies);
 
-    P.resize(numOfSpecies * numOfSpecies);
-    J.resize(numOfSpecies * numOfSpecies);
-    newtonIteration_Started = false;
+    newtonSolver.P.resize(numOfSpecies * numOfSpecies);
+    newtonSolver.J.resize(numOfSpecies * numOfSpecies);
+    newtonSolver.newtonIteration_Started = false;
 
-    ip.resize(numOfSpecies);
+    newtonSolver.ip.resize(numOfSpecies);
 
-    scaling_D1.resize(numOfSpecies);
-    scaling_D2.resize(numOfSpecies);
+    newtonSolver.scaling_D1.resize(numOfSpecies);
+    newtonSolver.scaling_D2.resize(numOfSpecies);
 
     startTAPE = NULL;
     intermediateTAPE = NULL;
@@ -223,8 +230,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
     nordsieck.num_of_steps_per_order = 0;
-    newtonIteration_Started = false;
-    convergenceIndicator = 0;
+    newtonSolver.newtonIteration_Started = false;
+    newtonSolver.convergenceIndicator = 0;
     internalError = false;
     // Sensitivity Generation
     taping = taping_;
@@ -320,8 +327,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
     nordsieck.num_of_steps_per_order = 0;
-    newtonIteration_Started = false;
-    convergenceIndicator = 0;
+    newtonSolver.newtonIteration_Started = false;
+    newtonSolver.convergenceIndicator = 0;
     internalError = false;
     // Sensitivity Generation
     taping = taping_;
@@ -420,8 +427,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
     isIntegrattionStarted = true;
     isIntegrattionPerformed = false;
     nordsieck.num_of_steps_per_order = 0;
-    newtonIteration_Started = false;
-    convergenceIndicator = 0;
+    newtonSolver.newtonIteration_Started = false;
+    newtonSolver.convergenceIndicator = 0;
     internalError = false;
     // Sensitivity Generation
     taping = taping_;
@@ -493,10 +500,10 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                 for (j = 0; j < numOfSpecies; j++)
                     corrector_old_derivatives[z][j] = corrector_derivatives[z][j];
 
-        setJacobian = false;
-        setNewP = config.updateEveryP;
-        newtonFAIL = 0;
-        stepFAIL = 0;
+        newtonSolver.setJacobian = false;
+        newtonSolver.setNewP = config.updateEveryP;
+        newtonSolver.newtonFAIL = 0;
+        newtonSolver.stepFAIL = 0;
 
         if (taping) {
             if (endTAPE == NULL && startTAPE != NULL)
@@ -533,8 +540,8 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                         z_corrector_derivatives_old[z][numOfSpecies * k + j] = 0.0;
                 }
         }
-        newtonFAIL = 0;
-        stepFAIL = 0;
+        newtonSolver.newtonFAIL = 0;
+        newtonSolver.stepFAIL = 0;
         while (accept_indicator == 0) {
             if (nordsieck.step_size_h != nordsieck.step_size_h_old) {
                 Scalar temp = nordsieck.step_size_h / nordsieck.step_size_h_old;

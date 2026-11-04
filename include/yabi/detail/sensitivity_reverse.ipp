@@ -95,11 +95,11 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
 
         if (!direct) {
             for (i = 0; i < numOfSpecies; i++) {
-                scaling_D1_adjoint[i] = scaling_D1[i];
-                scaling_D2_adjoint[i] = scaling_D2[i];
-                ip_adjoint[i] = ip[i];
+                scaling_D1_adjoint[i] = newtonSolver.scaling_D1[i];
+                scaling_D2_adjoint[i] = newtonSolver.scaling_D2[i];
+                ip_adjoint[i] = newtonSolver.ip[i];
                 for (j = 0; j < numOfSpecies; j++)
-                    P_adjoint[i * numOfSpecies + j] = P[i * numOfSpecies + j];
+                    P_adjoint[i * numOfSpecies + j] = newtonSolver.P[i * numOfSpecies + j];
             }
         }
     }

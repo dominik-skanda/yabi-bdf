@@ -40,6 +40,7 @@
     #include <vector>
 
     #include <yabi/detail/integrator_config.hpp>
+    #include <yabi/detail/newton_solver.hpp>
     #include <yabi/detail/nordsieck_state.hpp>
     #include <yabi/detail/replay_tape.hpp>
     #include <yabi/detail/step_controller.hpp>
@@ -241,17 +242,6 @@ template <class Scalar> class BDFIntegrator {
 
     Scalar max_StepLength;
     Scalar start_integration_time;
-    std::vector<Scalar> P;
-    std::vector<Scalar> J;
-    std::vector<int> ip;
-    std::vector<long> scaling_D1;
-    std::vector<long> scaling_D2;
-    bool setJacobian;
-    bool setNewP;
-    bool newtonIteration_Started;
-    Scalar convergenceIndicator;
-    unsigned newtonFAIL;
-    unsigned stepFAIL;
     unsigned int RHS_type; // 0 - Autonom; 1 time dependent; 2 time and parameter dependent;
     std::vector<Scalar> parameter;
     unsigned int sizeOfParameter;
@@ -342,6 +332,10 @@ template <class Scalar> class BDFIntegrator {
     // Step-size/order selection on top of the Nordsieck state (see
     // detail/step_controller.hpp).
     detail::StepController<Scalar> stepController;
+
+    // Newton iteration, Jacobian assembly and Newton-owned matrix state (see
+    // detail/newton_solver.hpp).
+    detail::NewtonSolver<Scalar> newtonSolver;
 };
 
 } // namespace yabi
