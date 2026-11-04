@@ -394,7 +394,7 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
                     std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }

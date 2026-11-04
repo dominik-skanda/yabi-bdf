@@ -133,50 +133,10 @@ template <typename Scalar> BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRH
     blasScalarMinusONE = (Scalar)-1.0;
     blasScalarZERO = (Scalar)0.0;
 
-    // Integrator Configuration
-
-    START_STEP_SIZE_SAFETY = (Scalar)0.90;
-    NEWTON_STEP_REDUCTION = (Scalar)0.25;
-    STEP_NOT_ACCEPTED_REDUCTION = (Scalar)0.25;
-    STEP_NOT_ACCEPTED_SAVETY_STEP = (Scalar)0.50;
-
-    ORDER_STAY_SAVETY_STEP = (Scalar)0.90;
-    ORDER_UP_SAVETY_STEP = (Scalar)0.90;
-    ORDER_DOWN_SAVETY_STEP = (Scalar)0.90;
-    allowedSTEPS = 10;
-
-    NEWTON_SAFETY = (Scalar)-1.00;
-    NEWTON_CONVERGED = (Scalar)0.01;
-    ACCEPT_NEWTON_CONVERGENCE_RATE = (Scalar)0.30;
-    allowedNEWTON = 10;
-    MAXNEWTONITERATION = 3;
-
-    MAXORDER = 6;
-    MINORDER = 1;
-    MACHINEPRECISION = std::numeric_limits<Scalar>::epsilon();
-    HITSOLUTION = false;
-    updateEveryP = false;
+    // Configuration and statistics use their declared defaults
+    // (see detail/integrator_config.hpp).
 
     linearSolver = std::make_unique<DenseLUSolver<Scalar>>();
-    ERROR_WEIGHTS_INDEX = 1;
-
-    MINTAYLOR = 1;
-
-    RESTRICT_ORDER_1_RATIO = (Scalar)3.000;
-    RESTRICT_ORDER_2_RATIO = (Scalar)2.414;
-    RESTRICT_ORDER_3_RATIO = (Scalar)1.618;
-    RESTRICT_ORDER_4_RATIO = (Scalar)1.280;
-    RESTRICT_ORDER_5_RATIO = (Scalar)1.127;
-    RESTRICT_ORDER_6_RATIO = (Scalar)1.064;
-
-    // Statistic
-
-    acceptedSteps = 0;
-    rejectedSteps = 0;
-    rejectedNewtonSteps = 0;
-    updateJacobian = 0;
-    updateP = 0;
-    newtonIterations = 0;
 }
 
 // Allocate a replay-tape node, append it after the current end and make it the
@@ -186,7 +146,7 @@ template <typename Scalar>
 typename BDFIntegrator<Scalar>::ReplayTape *
 BDFIntegrator<Scalar>::createReplayTapeNode() {
     ReplayTape *node = replayTapeStore.create();
-    node->CppAD_tape.assign(MAXNEWTONITERATION, nullptr);
+    node->CppAD_tape.assign(config.MAXNEWTONITERATION, nullptr);
     node->backLINK = endTAPE;
     if (endTAPE != nullptr)
         endTAPE->forwardLINK = node;
@@ -299,12 +259,12 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 
     adjointTapePointer = NULL;
 
-    acceptedSteps = 0;
-    rejectedSteps = 0;
-    rejectedNewtonSteps = 0;
-    updateJacobian = 0;
-    updateP = 0;
-    newtonIterations = 0;
+    stats.acceptedSteps = 0;
+    stats.rejectedSteps = 0;
+    stats.rejectedNewtonSteps = 0;
+    stats.updateJacobian = 0;
+    stats.updateP = 0;
+    stats.newtonIterations = 0;
 
     return true;
 }
@@ -394,12 +354,12 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 
     adjointTapePointer = NULL;
 
-    acceptedSteps = 0;
-    rejectedSteps = 0;
-    rejectedNewtonSteps = 0;
-    updateJacobian = 0;
-    updateP = 0;
-    newtonIterations = 0;
+    stats.acceptedSteps = 0;
+    stats.rejectedSteps = 0;
+    stats.rejectedNewtonSteps = 0;
+    stats.updateJacobian = 0;
+    stats.updateP = 0;
+    stats.newtonIterations = 0;
 
     return true;
 }
@@ -494,12 +454,12 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 
     adjointTapePointer = NULL;
 
-    acceptedSteps = 0;
-    rejectedSteps = 0;
-    rejectedNewtonSteps = 0;
-    updateJacobian = 0;
-    updateP = 0;
-    newtonIterations = 0;
+    stats.acceptedSteps = 0;
+    stats.rejectedSteps = 0;
+    stats.rejectedNewtonSteps = 0;
+    stats.updateJacobian = 0;
+    stats.updateP = 0;
+    stats.newtonIterations = 0;
 
     return true;
 }
@@ -544,7 +504,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                     corrector_old_derivatives[z][j] = corrector_derivatives[z][j];
 
         setJacobian = false;
-        setNewP = updateEveryP;
+        setNewP = config.updateEveryP;
         newtonFAIL = 0;
         stepFAIL = 0;
 
@@ -677,7 +637,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::getSolutionAt(Scalar t,
     //     y(t) = sum_j z_corrector[n*j + i] * theta^j,   theta = (t - t_i[1]) / step_size_h.
     // It is only accurate within the completed step theta in [-1, 0].
     const Scalar theta = (t - t_i[1]) / step_size_h;
-    if (theta < -1.0 - 4.0 * MACHINEPRECISION || theta > 4.0 * MACHINEPRECISION) {
+    if (theta < -1.0 - 4.0 * config.MACHINEPRECISION || theta > 4.0 * config.MACHINEPRECISION) {
         YABI_LOG_ERROR("getSolutionAt: t = ", t, " is outside the last step [",
                        t_i[1] - step_size_h, ", ", t_i[1], "]!");
 
@@ -740,37 +700,37 @@ bool BDFIntegrator<Scalar>::setStepSettings(
     Scalar STEP_NOT_ACCEPTED_SAVETY_STEP_, Scalar ORDER_STAY_SAVETY_STEP_,
     Scalar ORDER_UP_SAVETY_STEP_, Scalar ORDER_DOWN_SAVETY_STEP_, unsigned int allowedSTEPS_) {
     if (0 < NEWTON_STEP_REDUCTION_ && NEWTON_STEP_REDUCTION_ < 1)
-        NEWTON_STEP_REDUCTION = NEWTON_STEP_REDUCTION_;
+        config.NEWTON_STEP_REDUCTION = NEWTON_STEP_REDUCTION_;
     else
         return false;
 
     if (0 < STEP_NOT_ACCEPTED_REDUCTION_ && STEP_NOT_ACCEPTED_REDUCTION_ < 1)
-        STEP_NOT_ACCEPTED_REDUCTION = STEP_NOT_ACCEPTED_REDUCTION_;
+        config.STEP_NOT_ACCEPTED_REDUCTION = STEP_NOT_ACCEPTED_REDUCTION_;
     else
         return false;
 
     if (0 < ORDER_STAY_SAVETY_STEP_ && ORDER_STAY_SAVETY_STEP_ < 1)
-        ORDER_STAY_SAVETY_STEP = ORDER_STAY_SAVETY_STEP_;
+        config.ORDER_STAY_SAVETY_STEP = ORDER_STAY_SAVETY_STEP_;
     else
         return false;
 
     if (0 < ORDER_UP_SAVETY_STEP_ && ORDER_UP_SAVETY_STEP_ < 1)
-        ORDER_UP_SAVETY_STEP = ORDER_UP_SAVETY_STEP_;
+        config.ORDER_UP_SAVETY_STEP = ORDER_UP_SAVETY_STEP_;
     else
         return false;
 
     if (0 < ORDER_DOWN_SAVETY_STEP_ && ORDER_DOWN_SAVETY_STEP_ < 1)
-        ORDER_DOWN_SAVETY_STEP = ORDER_DOWN_SAVETY_STEP_;
+        config.ORDER_DOWN_SAVETY_STEP = ORDER_DOWN_SAVETY_STEP_;
     else
         return false;
 
     if (allowedSTEPS_ > 0)
-        allowedSTEPS = allowedSTEPS_;
+        config.allowedSTEPS = allowedSTEPS_;
     else
         return false;
 
     if (0 < STEP_NOT_ACCEPTED_SAVETY_STEP_ && STEP_NOT_ACCEPTED_SAVETY_STEP_ <= 1)
-        STEP_NOT_ACCEPTED_SAVETY_STEP = STEP_NOT_ACCEPTED_SAVETY_STEP_;
+        config.STEP_NOT_ACCEPTED_SAVETY_STEP = STEP_NOT_ACCEPTED_SAVETY_STEP_;
     else
         return false;
 
@@ -783,29 +743,29 @@ bool BDFIntegrator<Scalar>::setNewtonSettings(Scalar NEWTON_SAFETY_, Scalar NEWT
                                               unsigned int allowedNEWTON_,
                                               unsigned int MAXNEWTONITERATION_,
                                               bool updateEveryP_) {
-    NEWTON_SAFETY = NEWTON_SAFETY_;
+    config.NEWTON_SAFETY = NEWTON_SAFETY_;
 
     if (0 < NEWTON_CONVERGED_)
-        NEWTON_CONVERGED = NEWTON_CONVERGED_;
+        config.NEWTON_CONVERGED = NEWTON_CONVERGED_;
     else
         return false;
 
     if (0 <= ACCEPT_NEWTON_CONVERGENCE_RATE_)
-        ACCEPT_NEWTON_CONVERGENCE_RATE = ACCEPT_NEWTON_CONVERGENCE_RATE_;
+        config.ACCEPT_NEWTON_CONVERGENCE_RATE = ACCEPT_NEWTON_CONVERGENCE_RATE_;
     else
         return false;
 
     if (allowedNEWTON_ > 0)
-        allowedNEWTON = allowedNEWTON_;
+        config.allowedNEWTON = allowedNEWTON_;
     else
         return false;
 
     if (MAXNEWTONITERATION_ > 0)
-        MAXNEWTONITERATION = MAXNEWTONITERATION_;
+        config.MAXNEWTONITERATION = MAXNEWTONITERATION_;
     else
         return false;
 
-    updateEveryP = updateEveryP_;
+    config.updateEveryP = updateEveryP_;
 
     return true;
 }
@@ -825,10 +785,10 @@ bool BDFIntegrator<Scalar>::setAlgorithmSettings(unsigned int MAXORDER_, Scalar 
     if (!(ERROR_WEIGHTS_INDEX_ < 2))
         return false;
 
-    MAXORDER = MAXORDER_;
-    MACHINEPRECISION = MACHINEPRECISION_;
-    HITSOLUTION = HITSOLUTION_;
-    ERROR_WEIGHTS_INDEX = ERROR_WEIGHTS_INDEX_;
+    config.MAXORDER = MAXORDER_;
+    config.MACHINEPRECISION = MACHINEPRECISION_;
+    config.HITSOLUTION = HITSOLUTION_;
+    config.ERROR_WEIGHTS_INDEX = ERROR_WEIGHTS_INDEX_;
 
     return true;
 }
@@ -840,8 +800,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::setFixedOrder(unsigned in
     if (!(0 < order && order < 7))
         return false;
 
-    MINORDER = order;
-    MAXORDER = order;
+    config.MINORDER = order;
+    config.MAXORDER = order;
 
     return true;
 }
@@ -850,23 +810,23 @@ template <typename Scalar>
 bool BDFIntegrator<Scalar>::setRestrictOrderRatio(
     Scalar restrictRatioOrder1, Scalar restrictRatioOrder2, Scalar restrictRatioOrder3,
     Scalar restrictRatioOrder4, Scalar restrictRatioOrder5, Scalar restrictRatioOrder6) {
-    RESTRICT_ORDER_1_RATIO = restrictRatioOrder1;
-    RESTRICT_ORDER_2_RATIO = restrictRatioOrder2;
-    RESTRICT_ORDER_3_RATIO = restrictRatioOrder3;
-    RESTRICT_ORDER_4_RATIO = restrictRatioOrder4;
-    RESTRICT_ORDER_5_RATIO = restrictRatioOrder5;
-    RESTRICT_ORDER_6_RATIO = restrictRatioOrder6;
+    config.RESTRICT_ORDER_1_RATIO = restrictRatioOrder1;
+    config.RESTRICT_ORDER_2_RATIO = restrictRatioOrder2;
+    config.RESTRICT_ORDER_3_RATIO = restrictRatioOrder3;
+    config.RESTRICT_ORDER_4_RATIO = restrictRatioOrder4;
+    config.RESTRICT_ORDER_5_RATIO = restrictRatioOrder5;
+    config.RESTRICT_ORDER_6_RATIO = restrictRatioOrder6;
     return true;
 }
 
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::setMinTaylorCapacity(unsigned int MINTAYLOR_) {
-    MINTAYLOR = MINTAYLOR_;
+    config.MINTAYLOR = MINTAYLOR_;
 
-    RHS->capacity_order(MINTAYLOR);
+    RHS->capacity_order(config.MINTAYLOR);
     for (typename cppADFunListType::iterator it = cppADFunList.begin(); it != cppADFunList.end();
          it++) {
-        (*it)->capacity_order(MINTAYLOR);
+        (*it)->capacity_order(config.MINTAYLOR);
     }
 
     return true;
@@ -883,7 +843,7 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
     }
     for (i = counter + 1; i <= MINnumberADFunObjects; i++) {
         std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-        tempADFun->capacity_order(MINTAYLOR);
+        tempADFun->capacity_order(config.MINTAYLOR);
         cppADFunList.push_back(std::move(tempADFun));
     }
 

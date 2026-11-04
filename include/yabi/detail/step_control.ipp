@@ -32,7 +32,7 @@ inline bool BDFIntegrator<Scalar>::calculate_error_weights(Scalar *errorWeights,
                                                            Scalar *absoluteError,
                                                            Scalar &relativeError) {
     unsigned int i;
-    if (ERROR_WEIGHTS_INDEX == 0) {
+    if (config.ERROR_WEIGHTS_INDEX == 0) {
         for (i = 0; i < numOfSpecies; i++) {
             if (errorWeights[i] < fabs(yWeight[i]))
                 errorWeights[i] = fabs(yWeight[i]);
@@ -40,7 +40,7 @@ inline bool BDFIntegrator<Scalar>::calculate_error_weights(Scalar *errorWeights,
                 errorWeights[i] = absoluteError[i];
         }
     }
-    if (ERROR_WEIGHTS_INDEX == 1) {
+    if (config.ERROR_WEIGHTS_INDEX == 1) {
         for (i = 0; i < numOfSpecies; i++)
             errorWeights[i] = fabs(yWeight[i]) + (absoluteError[i] / relativeError);
     }
@@ -122,7 +122,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::estimateStartStepsize() {
     if (!(step_size_h > 0.0) || !std::isfinite(step_size_h))
         step_size_h = max_StepLength;
     else {
-        step_size_h = sqrt((2.0 * relative_error * START_STEP_SIZE_SAFETY) / step_size_h);
+        step_size_h = sqrt((2.0 * relative_error * config.START_STEP_SIZE_SAFETY) / step_size_h);
         if (!(step_size_h > 0.0) || !std::isfinite(step_size_h))
             step_size_h = max_StepLength;
     }
@@ -294,25 +294,25 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
     if (num_of_steps_per_order < order_corrector + 1) {
         Scalar eta = minimalEta;
 
-        if (HITSOLUTION)
+        if (config.HITSOLUTION)
             if ((eta * step_size_h) + t_i[1] > t_ende)
                 eta = (t_ende - t_i[1]) / step_size_h;
 
         if (eta * step_size_h < max_StepLength) {
             step_size_h = step_size_h * eta;
-            if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
             }
             t_i[0] = step_size_h + t_i[1];
         } else {
             eta = max_StepLength / step_size_h;
             step_size_h = step_size_h * eta;
-            if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
             }
             t_i[0] = step_size_h + t_i[1];
         }
@@ -341,7 +341,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
             normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
-            Scalar mu = ORDER_DOWN_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
+            Scalar mu = config.ORDER_DOWN_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
             Scalar sumTemp = 0.0;
             for (i = 1; i <= order_corrector - 1; i++)
                 sumTemp += (1.0 / i);
@@ -366,7 +366,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                     normWeightedLocalTruncError =
                         linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
-                    mu = ORDER_DOWN_SAVETY_STEP *
+                    mu = config.ORDER_DOWN_SAVETY_STEP *
                          (reachableError_derivatives[z] / normWeightedLocalTruncError);
                     sumTemp = 0.0;
                     for (i = 1; i <= order_corrector - 1; i++)
@@ -390,7 +390,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
         Scalar eta_q_plus = 0.0;
 
-        if (order_corrector < MAXORDER) {
+        if (order_corrector < config.MAXORDER) {
             temp1 = (Scalar)pow((step_size_h / (stepSizeSet_new[1] - step_size_h)),
                                 order_corrector + 1);
             temp1 *= (c_n / c_n_old);
@@ -409,7 +409,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
             normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
-            Scalar mu = ORDER_UP_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
+            Scalar mu = config.ORDER_UP_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
             Scalar sumTemp = 0.0;
             for (i = 1; i <= order_corrector + 1; i++)
                 sumTemp += (1.0 / i);
@@ -436,7 +436,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                     normWeightedLocalTruncError =
                         linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
 
-                    mu = ORDER_UP_SAVETY_STEP *
+                    mu = config.ORDER_UP_SAVETY_STEP *
                          (reachableError_derivatives[z] / normWeightedLocalTruncError);
                     sumTemp = 0.0;
                     for (i = 1; i <= order_corrector + 1; i++)
@@ -463,76 +463,76 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         Scalar eta_q = minimalEta;
 
         if (order_corrector - 1 == 1)
-            if (eta_q_minus > RESTRICT_ORDER_1_RATIO)
-                eta_q_minus = RESTRICT_ORDER_1_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_1_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_1_RATIO;
 
         if (order_corrector - 1 == 2)
-            if (eta_q_minus > RESTRICT_ORDER_2_RATIO)
-                eta_q_minus = RESTRICT_ORDER_2_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_2_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_2_RATIO;
 
         if (order_corrector - 1 == 3)
-            if (eta_q_minus > RESTRICT_ORDER_3_RATIO)
-                eta_q_minus = RESTRICT_ORDER_3_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_3_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_3_RATIO;
 
         if (order_corrector - 1 == 4)
-            if (eta_q_minus > RESTRICT_ORDER_4_RATIO)
-                eta_q_minus = RESTRICT_ORDER_4_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_4_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_4_RATIO;
 
         if (order_corrector - 1 == 5)
-            if (eta_q_minus > RESTRICT_ORDER_5_RATIO)
-                eta_q_minus = RESTRICT_ORDER_5_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_5_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_5_RATIO;
 
         if (order_corrector - 1 == 6)
-            if (eta_q_minus > RESTRICT_ORDER_6_RATIO)
-                eta_q_minus = RESTRICT_ORDER_6_RATIO;
+            if (eta_q_minus > config.RESTRICT_ORDER_6_RATIO)
+                eta_q_minus = config.RESTRICT_ORDER_6_RATIO;
 
         if (order_corrector + 1 == 1)
-            if (eta_q_plus > RESTRICT_ORDER_1_RATIO)
-                eta_q_plus = RESTRICT_ORDER_1_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_1_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_1_RATIO;
 
         if (order_corrector + 1 == 2)
-            if (eta_q_plus > RESTRICT_ORDER_2_RATIO)
-                eta_q_plus = RESTRICT_ORDER_2_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_2_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_2_RATIO;
 
         if (order_corrector + 1 == 3)
-            if (eta_q_plus > RESTRICT_ORDER_3_RATIO)
-                eta_q_plus = RESTRICT_ORDER_3_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_3_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_3_RATIO;
 
         if (order_corrector + 1 == 4)
-            if (eta_q_plus > RESTRICT_ORDER_4_RATIO)
-                eta_q_plus = RESTRICT_ORDER_4_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_4_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_4_RATIO;
 
         if (order_corrector + 1 == 5)
-            if (eta_q_plus > RESTRICT_ORDER_5_RATIO)
-                eta_q_plus = RESTRICT_ORDER_5_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_5_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_5_RATIO;
 
         if (order_corrector + 1 == 6)
-            if (eta_q_plus > RESTRICT_ORDER_6_RATIO)
-                eta_q_plus = RESTRICT_ORDER_6_RATIO;
+            if (eta_q_plus > config.RESTRICT_ORDER_6_RATIO)
+                eta_q_plus = config.RESTRICT_ORDER_6_RATIO;
 
-        if (HITSOLUTION)
+        if (config.HITSOLUTION)
             if ((eta_q * step_size_h) + t_i[1] > t_ende)
                 eta_q = (t_ende - t_i[1]) / step_size_h;
 
         if (eta_q * step_size_h > max_StepLength)
             eta_q = max_StepLength / step_size_h;
 
-        if (HITSOLUTION)
+        if (config.HITSOLUTION)
             if ((eta_q_plus * step_size_h) + t_i[1] > t_ende)
                 eta_q_plus = (t_ende - t_i[1]) / step_size_h;
 
         if (eta_q_plus * step_size_h > max_StepLength)
             eta_q_plus = max_StepLength / step_size_h;
 
-        if (HITSOLUTION)
+        if (config.HITSOLUTION)
             if ((eta_q_minus * step_size_h) + t_i[1] > t_ende)
                 eta_q_minus = (t_ende - t_i[1]) / step_size_h;
 
         if (eta_q_minus * step_size_h > max_StepLength)
             eta_q_minus = max_StepLength / step_size_h;
 
-        if (eta_q < eta_q_minus && order_corrector > MINORDER) {
-            if (eta_q_minus < eta_q_plus && order_corrector < MAXORDER) {
+        if (eta_q < eta_q_minus && order_corrector > config.MINORDER) {
+            if (eta_q_minus < eta_q_plus && order_corrector < config.MAXORDER) {
                 for (i = 0; i < numOfSpecies; i++)
                     for (j = order_corrector + 1; j < 7; j++)
                         z_corrector[numOfSpecies * j + i] = 0.0;
@@ -546,10 +546,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
                 order_corrector += 1;
                 step_size_h = step_size_h * eta_q_plus;
-                if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
                 }
                 t_i[0] = step_size_h + t_i[1];
                 num_of_steps_per_order = 0.0;
@@ -601,10 +601,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                 delete[] temp;
                 order_corrector -= 1;
                 step_size_h = step_size_h * eta_q_minus;
-                if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
                 }
                 t_i[0] = step_size_h + t_i[1];
 
@@ -613,7 +613,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
                 num_of_steps_per_order = 0;
                 isOrderDown = true;
             }
-        } else if ((eta_q < eta_q_plus || order_corrector < MINORDER) && order_corrector < MAXORDER) {
+        } else if ((eta_q < eta_q_plus || order_corrector < config.MINORDER) && order_corrector < config.MAXORDER) {
             for (i = 0; i < numOfSpecies; i++)
                 for (j = order_corrector + 1; j < 7; j++)
                     z_corrector[numOfSpecies * j + i] = 0.0;
@@ -627,10 +627,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
 
             order_corrector += 1;
             step_size_h = step_size_h * eta_q_plus;
-            if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+            if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                 YABI_LOG_ERROR("relaxing step size!");
 
-                step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
             }
             t_i[0] = step_size_h + t_i[1];
             num_of_steps_per_order = 0;
@@ -638,19 +638,19 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
         } else {
             if (!std::isinf(eta_q)) {
                 step_size_h = step_size_h * eta_q;
-                if (step_size_h < 4 * MACHINEPRECISION * t_i[1]) {
+                if (step_size_h < 4 * config.MACHINEPRECISION * t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
                 }
                 t_i[0] = step_size_h + t_i[1];
             } else {
                 eta_q = max_StepLength / step_size_h;
                 step_size_h = step_size_h * eta_q;
-                if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+                if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
                     YABI_LOG_ERROR("relaxing step size!");
 
-                    step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+                    step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
                 }
                 t_i[0] = step_size_h + t_i[1];
             }

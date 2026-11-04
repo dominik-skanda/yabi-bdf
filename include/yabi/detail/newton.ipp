@@ -183,10 +183,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         }
     };
 
-    while (newtonIterate <= MAXNEWTONITERATION) {
-        newtonIterations++;
+    while (newtonIterate <= config.MAXNEWTONITERATION) {
+        stats.newtonIterations++;
         if (setJacobian && !wasJacobianSet) {
-            updateJacobian++;
+            stats.updateJacobian++;
             wasJacobianSet = true;
 
             for (i = 0; i < numOfSpecies; i++)
@@ -279,7 +279,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             }
         }
         if (setNewP == true && setJacobian == false && !wasNewPSet) {
-            updateP++;
+            stats.updateP++;
             wasNewPSet = true;
             for (j = 0; j < numOfSpecies; j++)
                 for (k = 0; k < numOfSpecies; k++)
@@ -354,7 +354,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
             if (endTAPE->CppAD_tape[newtonIterate - 1] == NULL) {
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
                     std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }
@@ -439,9 +439,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
         if (newtonIterate == 1) {
             convergenceResidual[0] = linalg::NRM2(numOfSpecies, b, blasONE) / numOfSpecies;
 
-            minimalRate = (Scalar)pow((error_multiplier * NEWTON_CONVERGED * relative_error) /
+            minimalRate = (Scalar)pow((error_multiplier * config.NEWTON_CONVERGED * relative_error) /
                                           convergenceResidual[0],
-                                      1.0 / (MAXNEWTONITERATION - 1));
+                                      1.0 / (config.MAXNEWTONITERATION - 1));
 
             if (numOfDerivatives > 0 && !direct) {
                 for (z = 0; z < numOfDerivatives; z++) {
@@ -455,15 +455,15 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
                     Scalar tempRATE = 0;
                     tempRATE = (Scalar)pow(
-                        (error_multiplier * NEWTON_CONVERGED * relative_error_derivatives[z]) /
+                        (error_multiplier * config.NEWTON_CONVERGED * relative_error_derivatives[z]) /
                             convergenceResidual_derivatives[z][0],
-                        1.0 / (MAXNEWTONITERATION - 1));
+                        1.0 / (config.MAXNEWTONITERATION - 1));
                     if (tempRATE < minimalRate)
                         minimalRate = tempRATE;
                 }
             }
-            if (NEWTON_SAFETY > 0)
-                minimalRate = NEWTON_SAFETY;
+            if (config.NEWTON_SAFETY > 0)
+                minimalRate = config.NEWTON_SAFETY;
             bool pass = true;
             if (numOfDerivatives > 0 && !direct)
                 for (z = 0; z < numOfDerivatives; z++) {
@@ -476,9 +476,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         linalg::NRM2(numOfSpecies, tempMACHINEprecision, blasONE) / numOfSpecies;
 
                     if (!(convergenceResidual_derivatives[z][0] <
-                              error_multiplier * NEWTON_CONVERGED * relative_error_derivatives[z] ||
+                              error_multiplier * config.NEWTON_CONVERGED * relative_error_derivatives[z] ||
                           convergenceResidual_derivatives[z][0] <
-                              2.0 * MACHINEPRECISION * tempMACHINEprecisionNorm))
+                              2.0 * config.MACHINEPRECISION * tempMACHINEprecisionNorm))
                         pass = false;
                 }
 
@@ -489,8 +489,8 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                 linalg::NRM2(numOfSpecies, tempMACHINEprecision, blasONE) / numOfSpecies;
 
             if (pass == true)
-                if (convergenceResidual[0] < error_multiplier * NEWTON_CONVERGED * relative_error ||
-                    convergenceResidual[0] < 2.0 * MACHINEPRECISION * tempMACHINEprecisionNorm) {
+                if (convergenceResidual[0] < error_multiplier * config.NEWTON_CONVERGED * relative_error ||
+                    convergenceResidual[0] < 2.0 * config.MACHINEPRECISION * tempMACHINEprecisionNorm) {
                     convergenceIndicator = (Scalar)0.1;
                     if (taping) {
                         if (direct) {
@@ -548,7 +548,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
                                     std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
                                     intermediateCppADFunIterator--;
                                 }
@@ -759,12 +759,12 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                         linalg::NRM2(numOfSpecies, tempMACHINEprecision, blasONE) / numOfSpecies;
 
                     if (!(ratio * convergenceResidual_derivatives[z][0] <
-                              error_multiplier * NEWTON_CONVERGED * relative_error_derivatives[z] ||
+                              error_multiplier * config.NEWTON_CONVERGED * relative_error_derivatives[z] ||
                           convergenceResidual_derivatives[z][0] <
-                              error_multiplier * NEWTON_CONVERGED * relative_error_derivatives[z] ||
-                          (ratio < ACCEPT_NEWTON_CONVERGENCE_RATE && contructionRateFulfilled) ||
+                              error_multiplier * config.NEWTON_CONVERGED * relative_error_derivatives[z] ||
+                          (ratio < config.ACCEPT_NEWTON_CONVERGENCE_RATE && contructionRateFulfilled) ||
                           convergenceResidual_derivatives[z][0] <
-                              2.0 * MACHINEPRECISION * tempMACHINEprecisionNorm))
+                              2.0 * config.MACHINEPRECISION * tempMACHINEprecisionNorm))
                         pass = false;
                 }
 
@@ -775,10 +775,10 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
             if (pass == true)
                 if (ratio * convergenceResidual[0] <
-                        error_multiplier * NEWTON_CONVERGED * relative_error ||
-                    convergenceResidual[0] < error_multiplier * NEWTON_CONVERGED * relative_error ||
-                    (ratio < ACCEPT_NEWTON_CONVERGENCE_RATE && contructionRateFulfilled) ||
-                    convergenceResidual[0] < 2.0 * MACHINEPRECISION * tempMACHINEprecisionNorm) {
+                        error_multiplier * config.NEWTON_CONVERGED * relative_error ||
+                    convergenceResidual[0] < error_multiplier * config.NEWTON_CONVERGED * relative_error ||
+                    (ratio < config.ACCEPT_NEWTON_CONVERGENCE_RATE && contructionRateFulfilled) ||
+                    convergenceResidual[0] < 2.0 * config.MACHINEPRECISION * tempMACHINEprecisionNorm) {
                     convergenceIndicator = (Scalar)0.1;
                     if (taping) {
                         if (direct) {
@@ -836,7 +836,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                             if (endTAPE->direct_fun == NULL) {
                                 if (intermediateCppADFunIterator == cppADFunList.end()) {
                                     std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
                                     intermediateCppADFunIterator--;
                                 }
@@ -1009,7 +1009,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 
                     return true;
                 }
-            if (ratio > minimalRate && ratio > ACCEPT_NEWTON_CONVERGENCE_RATE) {
+            if (ratio > minimalRate && ratio > config.ACCEPT_NEWTON_CONVERGENCE_RATE) {
                 if (setJacobian == true) {
                     convergenceIndicator = -1.0;
                     if (numOfDerivatives > 0 && !direct) {
@@ -1065,7 +1065,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
                     continue;
                 }
             }
-            if (ratio < ACCEPT_NEWTON_CONVERGENCE_RATE) {
+            if (ratio < config.ACCEPT_NEWTON_CONVERGENCE_RATE) {
                 contructionRateFulfilled = true;
             }
         }
@@ -1120,25 +1120,25 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_cor
 }
 
 template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_vector() {
-    if (convergenceIndicator < 0 && !(step_size_h < 4.0 * MACHINEPRECISION * t_i[1])) {
+    if (convergenceIndicator < 0 && !(step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1])) {
         num_of_steps_per_order = 0;
 
-        if (newtonFAIL > allowedNEWTON)
+        if (newtonFAIL > config.allowedNEWTON)
             return 3;
         newtonFAIL += 1;
-        rejectedNewtonSteps++;
-        Scalar eta = NEWTON_STEP_REDUCTION;
+        stats.rejectedNewtonSteps++;
+        Scalar eta = config.NEWTON_STEP_REDUCTION;
         step_size_h = step_size_h * eta;
 
-        if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+        if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
             YABI_LOG_ERROR("relaxing step size!");
 
-            step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+            step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
         }
         t_i[0] = step_size_h + t_i[1];
         return 0; // repeat step
     }
-    if (convergenceIndicator < 0 && (step_size_h < 4.0 * MACHINEPRECISION * t_i[1])) {
+    if (convergenceIndicator < 0 && (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1])) {
         YABI_LOG_ERROR("WARNING: accept newton iteration due to minimal step size");
     }
     unsigned int i, z;
@@ -1162,7 +1162,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
     for (i = 0; i < numOfSpecies; i++)
         temp2[i] /= error_weights[i];
     reachableError =
-        2 * MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
+        2 * config.MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
     if (reachableError < relative_error)
         reachableError = relative_error;
 
@@ -1190,7 +1190,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
             for (i = 0; i < numOfSpecies; i++)
                 temp2[i] /= error_weights_derivatives[z][i];
             reachableError_derivatives[z] =
-                2 * MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
+                2 * config.MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2, blasONE) / numOfSpecies;
             if (reachableError_derivatives[z] < relative_error_derivatives[z])
                 reachableError_derivatives[z] = relative_error_derivatives[z];
 
@@ -1208,15 +1208,15 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         }
     }
     delete[] temp2;
-    if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+    if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
         pass = true;
 
         std::cout << "WARNING: accept step due to limiting minimal step size";
     }
     if (pass) {
-        acceptedSteps++;
+        stats.acceptedSteps++;
 
-        Scalar mu = ORDER_STAY_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
+        Scalar mu = config.ORDER_STAY_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
         Scalar sumTemp = 0.0;
         for (i = 1; i <= order_corrector; i++)
             sumTemp += (1.0 / i);
@@ -1234,7 +1234,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         if (numOfDerivatives > 0) {
             Scalar minimalEta_derivatives = 0.0;
             for (z = 0; z < numOfDerivatives; z++) {
-                mu = ORDER_STAY_SAVETY_STEP *
+                mu = config.ORDER_STAY_SAVETY_STEP *
                      (reachableError_derivatives[z] / normWeightedLocalTruncError_derivatives[z]);
                 sumTemp = 0.0;
                 for (i = 1; i <= order_corrector; i++)
@@ -1255,28 +1255,28 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         }
 
         if (order_corrector == 1)
-            if (minimalEta > RESTRICT_ORDER_1_RATIO)
-                minimalEta = RESTRICT_ORDER_1_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_1_RATIO)
+                minimalEta = config.RESTRICT_ORDER_1_RATIO;
 
         if (order_corrector == 2)
-            if (minimalEta > RESTRICT_ORDER_2_RATIO)
-                minimalEta = RESTRICT_ORDER_2_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_2_RATIO)
+                minimalEta = config.RESTRICT_ORDER_2_RATIO;
 
         if (order_corrector == 3)
-            if (minimalEta > RESTRICT_ORDER_3_RATIO)
-                minimalEta = RESTRICT_ORDER_3_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_3_RATIO)
+                minimalEta = config.RESTRICT_ORDER_3_RATIO;
 
         if (order_corrector == 4)
-            if (minimalEta > RESTRICT_ORDER_4_RATIO)
-                minimalEta = RESTRICT_ORDER_4_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_4_RATIO)
+                minimalEta = config.RESTRICT_ORDER_4_RATIO;
 
         if (order_corrector == 5)
-            if (minimalEta > RESTRICT_ORDER_5_RATIO)
-                minimalEta = RESTRICT_ORDER_5_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_5_RATIO)
+                minimalEta = config.RESTRICT_ORDER_5_RATIO;
 
         if (order_corrector == 6)
-            if (minimalEta > RESTRICT_ORDER_6_RATIO)
-                minimalEta = RESTRICT_ORDER_6_RATIO;
+            if (minimalEta > config.RESTRICT_ORDER_6_RATIO)
+                minimalEta = config.RESTRICT_ORDER_6_RATIO;
 
         if (taping) {
             endTAPE->timePoint = t_i[0];
@@ -1287,7 +1287,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         num_of_steps_per_order += 1;
         t_i[1] = t_i[0];
         t_i[0] = t_i[1] + step_size_h;
-        if (t_i[1] >= t_ende - 2 * MACHINEPRECISION * t_ende)
+        if (t_i[1] >= t_ende - 2 * config.MACHINEPRECISION * t_ende)
             return 2; // calculate OutPUT-Vector
         else
             return 1; // next Step
@@ -1296,12 +1296,12 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
 
         num_of_steps_per_order = 0;
 
-        if (stepFAIL > allowedSTEPS)
+        if (stepFAIL > config.allowedSTEPS)
             return 4;
 
-        rejectedSteps++;
+        stats.rejectedSteps++;
 
-        Scalar mu = STEP_NOT_ACCEPTED_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
+        Scalar mu = config.STEP_NOT_ACCEPTED_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
         Scalar eta = 2.0;
         if (mu >= 0.05 && mu <= 1.0) {
             eta = sqrt(pow(mu, Scalar(0.5 + (1.0 / (order_corrector + 1)))));
@@ -1326,7 +1326,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         if (numOfDerivatives > 0) {
             Scalar eta_derivatives = 0.0;
             for (z = 0; z < numOfDerivatives; z++) {
-                mu = STEP_NOT_ACCEPTED_SAVETY_STEP *
+                mu = config.STEP_NOT_ACCEPTED_SAVETY_STEP *
                      (reachableError_derivatives[z] / normWeightedLocalTruncError_derivatives[z]);
                 if (mu >= 0.05 && mu <= 1.0) {
                     eta_derivatives = sqrt(pow(mu, Scalar(0.5 + (1.0 / (order_corrector + 1)))));
@@ -1363,7 +1363,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         // from the highest Nordsieck term and, if dropping the order gives a smaller (or already
         // acceptable) error, reduce the order instead of only shrinking the step. The reduction is
         // recorded in the tape (orderDOWN marker below) so the sensitivity replay reconstructs it.
-        if (order_corrector > MINORDER) {
+        if (order_corrector > config.MINORDER) {
             Scalar c_down = -1.0;
             for (i = 0; i < order_corrector - 1; i++)
                 c_down *= stepSizeSet_new[i] / step_size_h;
@@ -1384,7 +1384,7 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
                 // before the current step entry (mirrors prepare_next_step's order-change marker).
                 if (taping && endTAPE != NULL) {
                     ReplayTape *marker = replayTapeStore.create();
-                    marker->CppAD_tape.assign(MAXNEWTONITERATION, nullptr);
+                    marker->CppAD_tape.assign(config.MAXNEWTONITERATION, nullptr);
                     marker->orderDOWN = true;
                     marker->stepSize = step_size_h;
                     marker->timePoint = t_i[1];
@@ -1400,15 +1400,15 @@ template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_
         }
 
         if (eta > 1.0) {
-            eta = STEP_NOT_ACCEPTED_REDUCTION;
+            eta = config.STEP_NOT_ACCEPTED_REDUCTION;
 
             YABI_LOG_ERROR("force step size reduction!");
         }
         step_size_h = step_size_h * eta;
-        if (step_size_h < 4.0 * MACHINEPRECISION * t_i[1]) {
+        if (step_size_h < 4.0 * config.MACHINEPRECISION * t_i[1]) {
             YABI_LOG_ERROR("relaxing step size!");
 
-            step_size_h = 4.0 * MACHINEPRECISION * t_i[1];
+            step_size_h = 4.0 * config.MACHINEPRECISION * t_i[1];
         }
         t_i[0] = step_size_h + t_i[1];
 

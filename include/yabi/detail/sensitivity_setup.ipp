@@ -188,7 +188,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
     if (start_CppAD_tape == NULL) {
         if (intermediateCppADFunIterator == cppADFunList.end()) {
             std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
             intermediateCppADFunIterator--;
         }

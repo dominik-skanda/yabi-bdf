@@ -439,7 +439,7 @@ bool BDFIntegrator<Scalar>::calculate_corrector_vector_forward(unsigned int orde
 
                 if (intermediateCppADFunIterator == cppADFunList.end()) {
                     std::unique_ptr<AbstractRHS<Scalar>> tempADFun(RHS->clone());
-    tempADFun->capacity_order(MINTAYLOR);
+    tempADFun->capacity_order(config.MINTAYLOR);
     cppADFunList.push_back(std::move(tempADFun));
                     intermediateCppADFunIterator--;
                 }

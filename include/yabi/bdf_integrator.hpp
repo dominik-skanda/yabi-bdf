@@ -40,6 +40,7 @@
     #include <vector>
 
     #include <yabi/linear_algebra.hpp>
+    #include <yabi/detail/integrator_config.hpp>
     #include <yabi/detail/replay_tape.hpp>
 
 namespace yabi {
@@ -135,11 +136,11 @@ template <class Scalar> class BDFIntegrator {
 
     bool printStatistic(std::ostream &outstream = std::cout, std::string delim = " ") {
         outstream << "INTEGRATION STATISTIC:" << delim << " " << std::endl
-                  << "ACCEPTED STEPS:" << delim << acceptedSteps << std::endl
-                  << "REJECTED STEPS:" << delim << rejectedSteps << std::endl
-                  << "REJECTED NEWTON STEPS:" << delim << rejectedNewtonSteps << std::endl
-                  << "JACOBIAN UPDATED:" << delim << updateJacobian << std::endl
-                  << "MATRIX P UPDATED:" << delim << updateP << std::endl;
+                  << "ACCEPTED STEPS:" << delim << stats.acceptedSteps << std::endl
+                  << "REJECTED STEPS:" << delim << stats.rejectedSteps << std::endl
+                  << "REJECTED NEWTON STEPS:" << delim << stats.rejectedNewtonSteps << std::endl
+                  << "JACOBIAN UPDATED:" << delim << stats.updateJacobian << std::endl
+                  << "MATRIX P UPDATED:" << delim << stats.updateP << std::endl;
         return true;
     };
 
@@ -153,24 +154,24 @@ template <class Scalar> class BDFIntegrator {
     Scalar getCurrentStepSize() const { return step_size_h; }
 
     // Total nonlinear (Newton) iterations performed across the integration.
-    unsigned int getNewtonIterations() const { return newtonIterations; }
+    unsigned int getNewtonIterations() const { return stats.newtonIterations; }
 
     // Accepted / rejected step counters.
-    unsigned int getAcceptedSteps() const { return acceptedSteps; }
-    unsigned int getRejectedSteps() const { return rejectedSteps; }
-    unsigned int getRejectedNewtonSteps() const { return rejectedNewtonSteps; }
+    unsigned int getAcceptedSteps() const { return stats.acceptedSteps; }
+    unsigned int getRejectedSteps() const { return stats.rejectedSteps; }
+    unsigned int getRejectedNewtonSteps() const { return stats.rejectedNewtonSteps; }
 
     // Number of Jacobian (re)evaluations.  Each is a full J assembly.
-    unsigned int getJacobianEvaluations() const { return updateJacobian; }
+    unsigned int getJacobianEvaluations() const { return stats.updateJacobian; }
 
     // Number of Newton-matrix (P) updates performed from a *reused* Jacobian
     // (i.e. P re-formed and re-factorized without reassembling J).
-    unsigned int getMatrixPUpdates() const { return updateP; }
+    unsigned int getMatrixPUpdates() const { return stats.updateP; }
 
     // Total number of Newton-matrix (LU) factorizations.  Every Jacobian
     // assembly re-forms and factorizes P, and every P-only update factorizes
     // again, so the total is updateJacobian + updateP.
-    unsigned int getFactorizations() const { return updateJacobian + updateP; }
+    unsigned int getFactorizations() const { return stats.updateJacobian + stats.updateP; }
 
   private:
     bool setSimultaneousDerivatives(Scalar **y_seed_derivatives_, Scalar **p_seed_derivatives_,
@@ -340,47 +341,10 @@ template <class Scalar> class BDFIntegrator {
     Scalar blasScalarMinusONE;
     Scalar blasScalarZERO;
 
-    // Integrator Configuration
-
-    Scalar START_STEP_SIZE_SAFETY;
-    Scalar NEWTON_STEP_REDUCTION;
-    Scalar STEP_NOT_ACCEPTED_REDUCTION;
-    Scalar STEP_NOT_ACCEPTED_SAVETY_STEP;
-    Scalar ORDER_STAY_SAVETY_STEP;
-    Scalar ORDER_UP_SAVETY_STEP;
-    Scalar ORDER_DOWN_SAVETY_STEP;
-    unsigned int allowedSTEPS;
-
-    Scalar NEWTON_SAFETY; // negative Value rate is estimated automatically
-    Scalar NEWTON_CONVERGED;
-    Scalar ACCEPT_NEWTON_CONVERGENCE_RATE;
-    unsigned int allowedNEWTON;
-    unsigned int MAXNEWTONITERATION;
-
-    unsigned int MAXORDER;
-    unsigned int MINORDER;
-    Scalar MACHINEPRECISION;
-    bool HITSOLUTION;
-    unsigned int ERROR_WEIGHTS_INDEX;
-    unsigned int MINTAYLOR;
-
-    bool updateEveryP;
-
-    Scalar RESTRICT_ORDER_1_RATIO;
-    Scalar RESTRICT_ORDER_2_RATIO;
-    Scalar RESTRICT_ORDER_3_RATIO;
-    Scalar RESTRICT_ORDER_4_RATIO;
-    Scalar RESTRICT_ORDER_5_RATIO;
-    Scalar RESTRICT_ORDER_6_RATIO;
-
-    // Statistic
-
-    unsigned int acceptedSteps;
-    unsigned int rejectedSteps;
-    unsigned int rejectedNewtonSteps;
-    unsigned int updateJacobian;
-    unsigned int updateP;
-    unsigned int newtonIterations;
+    // Integrator configuration and run statistics (own single-responsibility
+    // value types; see detail/integrator_config.hpp).
+    detail::IntegratorConfig<Scalar> config;
+    detail::IntegratorStatistics stats;
 };
 
 } // namespace yabi
