@@ -17,12 +17,15 @@ difference is fully explained (no unexplained regression):
 | `15_oregonator` | `t=1 => (112559.4758, …)` | identical |
 
 The change is introduced by the **first commit after the initial one**, `8f5492c`
-`fix(step-control): reduce BDF order on rejected steps (DASSL/LSODE-style)` — an intentional correctness fix. Building
-`8f5492c` reproduces **every** value in this baseline exactly, and every later commit (through `main`) leaves them
-unchanged.
+`fix(step-control): reduce BDF order on rejected steps (DASSL/LSODE-style)` — an intentional correctness fix. Every
+commit in the history was built and run: there are exactly two value regimes, the switch occurs at `8f5492c`, and no
+later commit (through `main`) changes either anchor.
 
-Consequence: the *initial commit is older/less correct*, not the baseline. The baseline is therefore
-`main` at `39148f3` (and `8f5492c` onward), **not** `cb357e3`. Testbenches `31`/`32` did not exist at the initial commit,
+**Do not read the smaller initial error as “better”.** The initial `yabi_basic` error (`4.33e-10`) is *smaller* than the
+baseline (`6.53e-10`), but both are ~`1e-10` absolute against `y(2) ≈ 0.368` (≈0.6 ppm) — at the requested tolerance
+floor. A different sequence of accepted steps/orders simply lands closer by coincidence; global error is not minimised
+by the controller. The current algorithm is the correct one (order reduction on rejection per DASSL/LSODE), so the
+baseline is `main` from `8f5492c` onward, **not** `cb357e3`. Testbenches `31`/`32` did not exist at the initial commit,
 and `28` was a different (framework-only) program, so they have no initial-commit counterpart.
 
 ## Test suites
