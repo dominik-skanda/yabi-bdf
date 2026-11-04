@@ -3,6 +3,28 @@
 Captured 2026-11-04, before the T30 `BDFIntegrator` decomposition refactor. **These values must not differ after the
 refactor.** The refactor is purely structural (separation of responsibilities); any numeric drift is a regression.
 
+## Provenance — comparison against the initial commit (`cb357e3`)
+
+The initial commit was built in isolation and its outputs compared against this baseline. **They differ**, and the
+difference is fully explained (no unexplained regression):
+
+| anchor | initial `cb357e3` | baseline (`main`) |
+|---|---|---|
+| `yabi_basic` error | `4.32592239807406e-10` | `6.53219478508049e-10` |
+| `13_hires` y1 | `0.000737133157726` | `0.000737133286353` |
+| `05_robertson` | `y1=0.107300429907 …` | identical |
+| `12_brusselator` | `y1(5) = 0.938299 …` | identical |
+| `15_oregonator` | `t=1 => (112559.4758, …)` | identical |
+
+The change is introduced by the **first commit after the initial one**, `8f5492c`
+`fix(step-control): reduce BDF order on rejected steps (DASSL/LSODE-style)` — an intentional correctness fix. Building
+`8f5492c` reproduces **every** value in this baseline exactly, and every later commit (through `main`) leaves them
+unchanged.
+
+Consequence: the *initial commit is older/less correct*, not the baseline. The baseline is therefore
+`main` at `39148f3` (and `8f5492c` onward), **not** `cb357e3`. Testbenches `31`/`32` did not exist at the initial commit,
+and `28` was a different (framework-only) program, so they have no initial-commit counterpart.
+
 ## Test suites
 - `ctest --test-dir build` (CppAD): **43/43 pass**.
 - `ctest --test-dir build-pure` (no CppAD): **10/10 pass**.
