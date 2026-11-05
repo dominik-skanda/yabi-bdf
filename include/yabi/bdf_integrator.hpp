@@ -39,6 +39,7 @@
     #include <string>
     #include <vector>
 
+    #include <yabi/detail/adjoint_engine.hpp>
     #include <yabi/detail/integrator_config.hpp>
     #include <yabi/detail/newton_solver.hpp>
     #include <yabi/detail/nordsieck_state.hpp>
@@ -261,13 +262,6 @@ template <class Scalar> class BDFIntegrator {
     bool deleteOldTape();
     bool createNewTape();
 
-    // adjoint
-
-    Scalar **solution_adjoint_species;
-    Scalar **solution_adjoint_parameter;
-
-    unsigned int stored_adjoint_order;
-
     // LAPACK WRAPPER
 
     int blasONE;
@@ -296,6 +290,11 @@ template <class Scalar> class BDFIntegrator {
     // Newton iteration, Jacobian assembly and Newton-owned matrix state (see
     // detail/newton_solver.hpp).
     detail::NewtonSolver<Scalar> newtonSolver;
+
+    // Reverse/discrete-adjoint replay and its result arrays (see
+    // detail/adjoint_engine.hpp).  Declared after the forward engine and the
+    // Newton solver because it borrows both.
+    detail::AdjointEngine<Scalar> adjointEngine;
 };
 
 } // namespace yabi

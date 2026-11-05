@@ -43,7 +43,11 @@ BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
           sensitivityEngine.reachableError_derivatives, sensitivityEngine.numOfDerivatives, direct,
           taping, sensitivityEngine.z_predictor_derivatives,
           sensitivityEngine.corrector_derivatives, sensitivityEngine.p_seed_derivatives, startTAPE,
-          endTAPE, replayTapeStore, cppADFunList, intermediateCppADFunIterator, internalError) {
+          endTAPE, replayTapeStore, cppADFunList, intermediateCppADFunIterator, internalError),
+      adjointEngine(sensitivityEngine, nordsieck, newtonSolver, RHS, numOfSpecies, RHS_type,
+                    sizeOfParameter, parameter, config, direct, internalError, startTape_stepSize,
+                    start_CppAD_tape, cppADFunList, intermediateCppADFunIterator, blasONE,
+                    blasScalarONE, blasScalarMinusONE, blasScalarZERO) {
     unsigned int i;
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
@@ -95,10 +99,7 @@ BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
     sensitivityEngine.initialize(numOfSpecies);
     direct = false;
 
-    solution_adjoint_species = NULL;
-    solution_adjoint_parameter = NULL;
-
-    stored_adjoint_order = 0;
+    adjointEngine.release();
 
     blasONE = 1;
     blasScalarONE = (Scalar)1.0;
@@ -660,12 +661,12 @@ bool BDFIntegrator<Scalar>::getReverseSolutionVector(Scalar **solution_adjoint_s
                                                      Scalar **solution_adjoint_parameter_) {
     unsigned int i, j;
     for (i = 0; i < numOfSpecies; i++)
-        for (j = 0; j < stored_adjoint_order; j++)
-            solution_adjoint_species_[i][j] = solution_adjoint_species[i][j];
+        for (j = 0; j < adjointEngine.stored_adjoint_order; j++)
+            solution_adjoint_species_[i][j] = adjointEngine.solution_adjoint_species[i][j];
 
     for (i = 0; i < sizeOfParameter; i++)
-        for (j = 0; j < stored_adjoint_order; j++)
-            solution_adjoint_parameter_[i][j] = solution_adjoint_parameter[i][j];
+        for (j = 0; j < adjointEngine.stored_adjoint_order; j++)
+            solution_adjoint_parameter_[i][j] = adjointEngine.solution_adjoint_parameter[i][j];
 
     return true;
 }
@@ -888,19 +889,7 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
 
     cppADFunList.clear();
 
-    if (!sensitivityEngine.reachableError_derivatives.empty())
-
-        // adjoint
-        if (solution_adjoint_species != NULL) {
-            for (i = 0; i < numOfSpecies; i++)
-                delete[] solution_adjoint_species[i];
-            delete[] solution_adjoint_species;
-        }
-    if (solution_adjoint_parameter != NULL) {
-        for (i = 0; i < sizeOfParameter; i++)
-            delete[] solution_adjoint_parameter[i];
-        delete[] solution_adjoint_parameter;
-    }
+    // Adjoint result arrays are released by ~AdjointEngine().
 }
 
 // Sensitivity Generation
