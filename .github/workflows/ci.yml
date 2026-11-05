@@ -6,7 +6,15 @@ on:
 
 jobs:
   build-test:
+    name: build-test (CppAD=${{ matrix.cppad }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Build and test both configurations: the full CppAD build and the
+        # pure (YABI_USE_CPPAD=OFF) build.  The pure configuration also runs
+        # the CppAD-free component unit tests.
+        cppad: ["ON", "OFF"]
     steps:
       - uses: actions/checkout@v4
 
@@ -17,7 +25,7 @@ jobs:
             liblapack-dev libblas-dev libcppad-dev
 
       - name: Configure
-        run: cmake -S . -B build
+        run: cmake -S . -B build -DYABI_USE_CPPAD=${{ matrix.cppad }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"

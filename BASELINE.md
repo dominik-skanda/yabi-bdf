@@ -29,8 +29,8 @@ baseline is `main` from `8f5492c` onward, **not** `cb357e3`. Testbenches `31`/`3
 and `28` was a different (framework-only) program, so they have no initial-commit counterpart.
 
 ## Test suites
-- `ctest --test-dir build` (CppAD): **43/43 pass**.
-- `ctest --test-dir build-pure` (no CppAD): **10/10 pass**.
+- `ctest --test-dir build` (CppAD): **44/44 pass**.
+- `ctest --test-dir build-pure` (no CppAD): **11/11 pass**.
 
 ## Key numeric anchors (representative outputs, verbatim)
 
