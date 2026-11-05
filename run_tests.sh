@@ -20,7 +20,7 @@ echo "COMMAND: cmake --build build -j$(nproc)"
 cmake --build build -j"$(nproc)"
 
 echo "=== 3. QUICK BINARY CHECKS (full output) ==="
-for b in build/yabi_basic build/yabi_nonautonomous build/yabi_sensitivity_demo build/yabi_test_20_brusselator_sensitivity build/yabi_test_28_second_order_sensitivity; do
+for b in build/yabi_basic build/yabi_nonautonomous build/yabi_sensitivity_demo build/tests/yabi_test_20_brusselator_sensitivity build/tests/yabi_test_28_second_order_sensitivity; do
     echo "--- RUNNING $(basename $b) ---"
     if [[ -x "$b" ]]; then
         echo "COMMAND: $b"
@@ -31,7 +31,13 @@ for b in build/yabi_basic build/yabi_nonautonomous build/yabi_sensitivity_demo b
     fi
 done
 
-echo "=== 4. FULL CTEST (full output, no suppression) ==="
+echo "=== 4. TEST TIERS (unit / component / system / example) ==="
+for label in unit component system example; do
+    echo "COMMAND: ctest --test-dir build -L $label --output-on-failure"
+    ctest --test-dir build -L "$label" --output-on-failure --no-tests=error
+done
+
+echo "=== 5. FULL CTEST (full output, no suppression) ==="
 echo "COMMAND: ctest --test-dir build --output-on-failure"
 ctest --test-dir build --output-on-failure
 

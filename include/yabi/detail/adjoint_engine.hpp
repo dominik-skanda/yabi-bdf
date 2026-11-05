@@ -21,6 +21,7 @@
 #include <yabi/detail/replay_tape.hpp>
 #include <yabi/detail/sensitivity_engine.hpp>
 #include <yabi/linear_algebra.hpp>
+#include <yabi/log.hpp>
 
 namespace yabi {
 namespace detail {

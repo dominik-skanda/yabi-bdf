@@ -88,7 +88,10 @@ yabi-bdf/
   src/
     bdf_integrator.cpp        explicit instantiation for double
   examples/
-  testbench/
+  tests/
+    unit/                     isolated component unit tests
+    component/                cross-component integration tests
+    system/                   mathematical benchmarks and regressions
 ```
 
 The `.ipp` files contain the member definitions of the class template. They
@@ -198,7 +201,7 @@ before any state is changed.
 actually used. Use `getCurrentOrder()` to read it. Likewise `max_StepLength` caps
 the step but is not an accuracy knob. Control accuracy with `rtol`/`atol`; because the
 controller changes order as the step cap changes, the error is not monotone in
-`max_StepLength` (measured examples in `testbench/README.md`).
+`max_StepLength` (measured examples in `tests/system/README.md`).
 
 To **force** a fixed order (e.g. for per-order convergence measurement), use
 `setFixedOrder(q)`:
@@ -296,36 +299,37 @@ integrator.getReverseSolutionVector(adj_sp, adj_p);   // adj_sp[i][1] = 2nd-orde
 ```
 
 A direct `forward(2)` without a prior `forward(1)` is not valid. The
-`testbench/28_second_order_sensitivity.cpp` driver verifies second order against
+`tests/system/28_second_order_sensitivity.cpp` driver verifies second order against
 the exact analytical solution of `y' = y²`.
 
 ## Tests
 
-`testbench/` contains eleven programs:
+The tests are split into three ctest tiers below `tests/`:
 
-1. linear autonomous equation,
-2. linear 2×2 system,
-3. harmonic oscillator,
-4. non-autonomous equation,
-5. Robertson problem (autonomous),
-6. Van der Pol oscillator, `mu = 1000` (autonomous),
-7. forward, reverse and simultaneous sensitivities,
-8. Robertson problem (parameter-dependent form),
-9. Van der Pol oscillator (parameter-dependent form),
-10. failure-path regression: an invalid error weight must be rejected,
-11. tolerance adherence across eight decades of `rtol`, plus first-order step
-    convergence with `MAXORDER = 1`,
-12. per-order convergence for orders 2–6, forced via `setFixedOrder(q)` (slope
-    ≈ `q` measured at two step caps).
+- `tests/unit/` — one focused executable per component (`IntegratorConfig`,
+  `ReplayTape`, `NordsieckState`, `StepController`, `NewtonSolver`,
+  `SensitivityEngine`, `AdjointEngine`, `DenseLUSolver`/CSC reference path,
+  `SparsityPattern`, `CscMatrix`, and the CppAD RHS sparsity hooks). These are
+  fast, dependency-light contract tests.
+- `tests/component/` — cross-component integration: native CSC assembly and
+  the CppAD sparse Jacobian path (`native_sparse`), plus symbolic reuse with
+  UMFPACK/KLU (`suitesparse_sparse`, registered only when SuiteSparse is
+  available).
+- `tests/system/` — the mathematical benchmark suite: linear problems,
+  Robertson, Van der Pol, Brusselator, HIRES, Oregonator, Prothero–Robinson,
+  damped pendulum, E5, large sparse/network systems, forward/reverse/
+  simultaneous sensitivities, second order, dense output, fixed order, and
+  failure/tolerance regressions.
 
-All of them check their result against an independent reference solution.
-Run them with `make testbench` or `ctest`; `ctest` also registers the three
-self-checking examples (`example_basic`, `example_nonautonomous`,
+Every test checks its result against an independent reference solution.
+Run a single tier with `ctest --test-dir build -L unit`, `-L component`, or
+`-L system`; `ctest` also registers the three self-checking examples under the
+`example` label (`example_basic`, `example_nonautonomous`,
 `example_sensitivity_demo`).
 
-See `testbench/README.md` for the measured convergence slopes; the per-order
+See `tests/system/README.md` for the measured convergence slopes; the per-order
 convergence test for orders 2–6 is now expressible via `setFixedOrder` +
-`getCurrentOrder` (`testbench/32_fixed_order.cpp`).
+`getCurrentOrder` (`tests/system/32_fixed_order.cpp`).
 
 ## License
 
@@ -373,12 +377,15 @@ integrator.setLinearSolver(new yabi::UmfpackLinearSolver<double>()); // takes ow
 Defaults to dense LAPACK. Supports UMFPACK/KLU via SuiteSparse. See `examples/heat1d_umfpack_literature.cpp`.
 
 ### Pure/manual ODE interface (no CppAD dependency in user code)
-Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `testbench/manual_sensitivity_pure.cpp`.
+Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `tests/system/manual_sensitivity_pure.cpp`.
 
 ## Tests
 ```sh
-ctest --test-dir build --output-on-failure  # all tests
-./run_tests.sh                               # verbose full run
+ctest --test-dir build --output-on-failure   # all tiers
+ctest --test-dir build -L unit               # isolated component contracts
+ctest --test-dir build -L component          # native sparse / SuiteSparse
+ctest --test-dir build -L system             # mathematical benchmarks
+./run_tests.sh                                # verbose full run
 ```
 
 ## Detailed usage

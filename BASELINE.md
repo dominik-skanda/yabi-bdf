@@ -29,9 +29,19 @@ baseline is `main` from `8f5492c` onward, **not** `cb357e3`. Testbenches `31`/`3
 and `28` was a different (framework-only) program, so they have no initial-commit counterpart.
 
 ## Test suites
-- `ctest --test-dir build` (CppAD): **46/46 pass** (T31 adds `34_native_sparse` and, when SuiteSparse is
-  available, `suitesparse_sparse`).
-- `ctest --test-dir build-pure` (no CppAD): **11/11 pass**.
+
+Tests are organised in three tiers below `tests/` and selected with ctest labels:
+
+| tier | label | contents |
+|---|---|---|
+| unit | `unit` | isolated component contracts (config, replay tape, Nordsieck state, step controller, Newton, sensitivity, adjoint, dense/CSC solver, sparsity, CscMatrix, CppAD RHS sparsity) |
+| component | `component` | cross-component integration (`native_sparse`, plus `suitesparse_sparse` when SuiteSparse is available) |
+| system | `system` | mathematical benchmarks and regressions (`tests/system/`) |
+
+- `ctest --test-dir build` (CppAD): **56/56 pass** — 11 unit, 2 component (including
+  `suitesparse_sparse` when SuiteSparse is available), 40 system, 3 example.
+- `ctest --test-dir build-pure` (no CppAD): **20/20 pass** — 10 unit, 7 pure system,
+  3 example.
 
 ## Key numeric anchors (representative outputs, verbatim)
 

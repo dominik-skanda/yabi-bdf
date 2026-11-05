@@ -18,6 +18,7 @@
 #include <yabi/detail/nordsieck_state.hpp>
 #include <yabi/detail/replay_tape.hpp>
 #include <yabi/linear_algebra.hpp>
+#include <yabi/log.hpp>
 
 namespace yabi {
 namespace detail {

@@ -1,7 +1,11 @@
-BDF Integrator Testbench - Canonical Tests
-==========================================
+BDF Integrator System Tests - Canonical Mathematical Benchmarks
+===============================================================
 
-This testbench implements canonical tests for BDF integrators including:
+This directory is the `system` ctest tier: full integrator runs on canonical
+mathematical problems. It is complemented by the focused unit tests in
+`tests/unit/` and the cross-component tests in `tests/component/`.
+
+It implements canonical tests for BDF integrators including:
 - Linear test problems
 - Stiff test problems from literature (Hairer & Wanner test suite style)
 - Sensitivity analysis tests (forward, reverse/adjoint, simultaneous)
@@ -22,7 +26,10 @@ not monotone in general: at `rtol = 1e-4` the relative error measured over
 All of those stay inside the requested error envelope; the wobble is the order
 controller, not a loss of convergence.
 
-Run with: make testbench (or compile individually)
+Run the tier with `ctest --test-dir build -L system` (or compile an individual
+source against `libyabi`). The numbered `*.cpp` and `manual_*.cpp` programs
+require CppAD; `pure_*.cpp` use the `user_ode.hpp` interface and run in both
+the CppAD and pure configurations.
 
 The three examples are also self-checking and are registered in ctest as
 `example_basic`, `example_nonautonomous` and `example_sensitivity_demo`.

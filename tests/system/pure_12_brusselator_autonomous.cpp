@@ -1,7 +1,7 @@
 // Pure (CppAD-free) Brusselator — the user_ode.hpp / UserODERHS path.
-// Same problem as testbench/12, but the RHS and Jacobian are hand-written
+// Same problem as system test 12, but the RHS and Jacobian are hand-written
 // (no AD, no finite differences): f = A + y0^2*y1 - (B+1)*y0;  g = B*y0 - y0^2*y1.
-// Reference (CppAD testbench/12): y1(5) = 0.938299, y2(5) = 4.52728.
+// Reference (CppAD system test 12): y1(5) = 0.938299, y2(5) = 4.52728.
 #include <yabi/bdf_integrator.hpp>
 #include <yabi/user_ode_rhs.hpp>
 

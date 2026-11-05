@@ -2,12 +2,18 @@ cmake_minimum_required(VERSION 3.16)
 project(YABI VERSION 0.2.0 LANGUAGES CXX)
 
 option(YABI_BUILD_EXAMPLES "Build YABI example programs" ON)
-option(YABI_BUILD_TESTBENCH "Build YABI testbench" ON)
+option(YABI_BUILD_TESTS "Build the unit/component/system test suite" ON)
+# Backwards-compatible alias for the old flat testbench (now tests/system).
+# Only consulted when supplied, so fresh configurations see a single toggle.
+if(DEFINED YABI_BUILD_TESTBENCH)
+    message(DEPRECATION "YABI_BUILD_TESTBENCH is deprecated; use YABI_BUILD_TESTS")
+    set(YABI_BUILD_TESTS "${YABI_BUILD_TESTBENCH}")
+endif()
 
 # The examples self-check (they return non-zero on failure), so they are
-# registered as ctest cases just like the testbench programs.  enable_testing()
-# is therefore unconditional: YABI_BUILD_TESTBENCH=OFF must not silently
-# disable the example checks.
+# registered as ctest cases just like the test suite.  enable_testing() is
+# therefore unconditional: disabling tests must not silently disable the
+# example checks.
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -114,6 +120,7 @@ if(YABI_BUILD_EXAMPLES)
         list(APPEND YABI_EXAMPLE_TARGETS yabi_${example})
         # Each example checks its own result and returns non-zero on failure.
         add_test(NAME example_${example} COMMAND yabi_${example})
+        set_tests_properties(example_${example} PROPERTIES LABELS "example")
     endforeach()
     # Trajectory dumper for the benchmark gallery (utility, not a ctest).
     add_executable(dump_trajectories examples/dump_trajectories.cpp)
@@ -121,31 +128,13 @@ if(YABI_BUILD_EXAMPLES)
 endif()
 
 # ---------------------------------------------------------------------------
-# Testbench
+# Test suite
 # ---------------------------------------------------------------------------
-if(YABI_BUILD_TESTBENCH)
-    # Numbered CppAD tests + manual sensitivity demos: these build an AD tape
-    # directly and therefore require CppAD (only built in the CppAD mode).
-    if(YABI_USE_CPPAD)
-        file(GLOB YABI_TEST_SOURCES CONFIGURE_DEPENDS testbench/[0-9]*.cpp testbench/manual_*.cpp)
-    else()
-        set(YABI_TEST_SOURCES)
-    endif()
-    # Pure (UserODERHS / user_ode.hpp) benchmarks: built in both modes; linked
-    # against yabi_pure (no CppAD) in the pure mode.
-    file(GLOB YABI_PURE_SOURCES CONFIGURE_DEPENDS testbench/pure_*.cpp)
-    list(APPEND YABI_TEST_SOURCES ${YABI_PURE_SOURCES})
-    foreach(source ${YABI_TEST_SOURCES})
-        get_filename_component(name ${source} NAME_WE)
-        add_executable(yabi_test_${name} ${source})
-        if(YABI_USE_CPPAD)
-            target_link_libraries(yabi_test_${name} PRIVATE yabi)
-        else()
-            target_link_libraries(yabi_test_${name} PRIVATE yabi_pure)
-        endif()
-        add_test(NAME ${name} COMMAND yabi_test_${name})
-    endforeach()
-endif()
+# tests/unit      isolated component contracts (CppAD-free where possible)
+# tests/component cross-component integration (native sparse, SuiteSparse)
+# tests/system    mathematical benchmarks (canonical ODE problems)
+# add_subdirectory(tests) is at the end so the optional SuiteSparse probes have
+# run before the component tests are configured.
 
 # ---------------------------------------------------------------------------
 # Install
@@ -213,19 +202,9 @@ if(UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY)
   target_link_libraries(yabi_heat1d_umfpack_sens_dense_api PRIVATE yabi ${UMFPACK_LIBRARY} amd cholmod colamd ccolamd camd suitesparseconfig lapack blas cppad_lib m)
 endif()
 
-# Optional T31 test: native CSC path + symbolic reuse with UMFPACK and KLU.
-# Registered only when both SuiteSparse solvers are available.
+# Optional SuiteSparse solvers for the component test tier.
 find_path(KLU_INCLUDE_DIR klu.h PATHS /usr/include/suitesparse)
 find_library(KLU_LIBRARY klu)
-if(YABI_USE_CPPAD AND UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY AND KLU_INCLUDE_DIR AND KLU_LIBRARY)
-  add_executable(yabi_test_suitesparse_sparse testbench/suitesparse_sparse.cpp)
-  target_include_directories(yabi_test_suitesparse_sparse PRIVATE
-    ${UMFPACK_INCLUDE_DIR} ${KLU_INCLUDE_DIR})
-  target_link_libraries(yabi_test_suitesparse_sparse PRIVATE yabi
-    ${UMFPACK_LIBRARY} ${KLU_LIBRARY} amd cholmod colamd ccolamd camd suitesparseconfig
-    lapack blas cppad_lib m)
-  add_test(NAME suitesparse_sparse COMMAND yabi_test_suitesparse_sparse)
-endif()
 
 # -----------------------------------------------------------------
 # Plot runner (matplotlib / numpy / pandas) — external, not required
@@ -251,3 +230,10 @@ add_executable(plot_brusselator_traj examples/plot_brusselator_traj.cpp)
 target_link_libraries(plot_brusselator_traj PRIVATE yabi cppad_lib m)
 add_executable(plot_robertson_traj examples/plot_robertson_traj.cpp)
 target_link_libraries(plot_robertson_traj PRIVATE yabi cppad_lib m)
+
+# ---------------------------------------------------------------------------
+# Tests (unit / component / system)
+# ---------------------------------------------------------------------------
+if(YABI_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

@@ -14,6 +14,7 @@
 #include <yabi/abstract_rhs.hpp>
 #include <yabi/detail/integrator_config.hpp>
 #include <yabi/detail/nordsieck_state.hpp>
+#include <yabi/log.hpp>
 
 namespace yabi {
 namespace detail {

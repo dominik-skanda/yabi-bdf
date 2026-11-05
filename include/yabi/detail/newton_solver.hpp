@@ -20,6 +20,7 @@
 #include <yabi/detail/replay_tape.hpp>
 #include <yabi/detail/step_controller.hpp>
 #include <yabi/linear_solver.hpp>
+#include <yabi/log.hpp>
 #include <yabi/sparsity_pattern.hpp>
 
 namespace yabi {

@@ -13,7 +13,7 @@ jobs:
       matrix:
         # Build and test both configurations: the full CppAD build and the
         # pure (YABI_USE_CPPAD=OFF) build.  The pure configuration also runs
-        # the CppAD-free component unit tests.
+        # the CppAD-free unit and system tests.
         cppad: ["ON", "OFF"]
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config \
             liblapack-dev libblas-dev libcppad-dev
+          # SuiteSparse enables the UMFPACK/KLU symbolic-reuse component test.
+          if [ "${{ matrix.cppad }}" = "ON" ]; then
+            sudo apt-get install -y libsuitesparse-dev
+          fi
 
       - name: Configure
         run: cmake -S . -B build -DYABI_USE_CPPAD=${{ matrix.cppad }}
@@ -30,5 +34,15 @@ jobs:
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+      - name: Test unit tier
+        run: ctest --test-dir build -L unit --output-on-failure --no-tests=error
+
+      - name: Test component tier
+        if: matrix.cppad == 'ON'
+        run: ctest --test-dir build -L component --output-on-failure --no-tests=error
+
+      - name: Test system tier
+        run: ctest --test-dir build -L system --output-on-failure --no-tests=error
+
+      - name: Test examples
+        run: ctest --test-dir build -L example --output-on-failure --no-tests=error

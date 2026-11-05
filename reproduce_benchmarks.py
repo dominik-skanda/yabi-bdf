@@ -11,10 +11,10 @@ def run_tolerance_test():
     print("====================================================")
     
     try:
-        result = subprocess.run(['build/yabi_test_11_tolerance_and_order'], capture_output=True, text=True, check=True)
+        result = subprocess.run(['build/tests/yabi_test_11_tolerance_and_order'], capture_output=True, text=True, check=True)
         output = result.stdout
     except Exception as e:
-        print(f"Error running testbench 11: {e}")
+        print(f"Error running system test 11: {e}")
         return
 
     rtols = []
@@ -74,7 +74,7 @@ def run_second_order_sensitivities():
     print("====================================================")
     
     try:
-        result = subprocess.run(['build/yabi_test_28_second_order_sensitivity'], capture_output=True, text=True, check=True)
+        result = subprocess.run(['build/tests/yabi_test_28_second_order_sensitivity'], capture_output=True, text=True, check=True)
         print("--- Second-Order Sensitivity Terminal Output ---")
         print(result.stdout.strip())
         print("-------------------------------------------------")
