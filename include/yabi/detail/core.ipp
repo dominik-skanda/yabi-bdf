@@ -30,13 +30,20 @@ namespace yabi {
 template <typename Scalar>
 BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
     : stepController(nordsieck, config),
-      newtonSolver(nordsieck, config, stats, RHS, linearSolver, numOfSpecies, RHS_type,
-                   sizeOfParameter, parameter, error_weights, absolut_error, relative_error,
-                   error_weights_derivatives, absolut_error_derivatives, relative_error_derivatives,
-                   t_ende, minimalEta, reachableError, reachableError_derivatives, numOfDerivatives,
-                   direct, taping, z_predictor_derivatives, corrector_derivatives,
-                   p_seed_derivatives, startTAPE, endTAPE, replayTapeStore, cppADFunList,
-                   intermediateCppADFunIterator, internalError) {
+      sensitivityEngine(nordsieck, config, RHS, numOfSpecies, RHS_type, sizeOfParameter, parameter,
+                        start_integration_time, direct, internalError, startTAPE, intermediateTAPE,
+                        start_CppAD_tape, startTape_stepSize, cppADFunList,
+                        intermediateCppADFunIterator, blasONE, blasScalarONE, blasScalarMinusONE,
+                        blasScalarZERO),
+      newtonSolver(
+          nordsieck, config, stats, RHS, linearSolver, numOfSpecies, RHS_type, sizeOfParameter,
+          parameter, error_weights, absolut_error, relative_error,
+          sensitivityEngine.error_weights_derivatives, sensitivityEngine.absolut_error_derivatives,
+          sensitivityEngine.relative_error_derivatives, t_ende, minimalEta, reachableError,
+          sensitivityEngine.reachableError_derivatives, sensitivityEngine.numOfDerivatives, direct,
+          taping, sensitivityEngine.z_predictor_derivatives,
+          sensitivityEngine.corrector_derivatives, sensitivityEngine.p_seed_derivatives, startTAPE,
+          endTAPE, replayTapeStore, cppADFunList, intermediateCppADFunIterator, internalError) {
     unsigned int i;
     isIntegrattionPerformed = false;
     isIntegrattionStarted = false;
@@ -83,45 +90,13 @@ BDFIntegrator<Scalar>::BDFIntegrator(const AbstractRHS<Scalar> &RHS_)
     endTAPE = NULL;
 
     start_CppAD_tape = NULL;
-    z_predictor_tape.clear();
-    z_corrector_tape.clear();
-    correctorVector_tape.resize(numOfSpecies);
     internalError = false;
-    P_tape.clear();
-    ip_tape.clear();
-    scaling_D1_tape.clear();
-    scaling_D2_tape.clear();
 
-    forward_solution_Vector.resize(numOfSpecies);
-    for (i = 0; i < numOfSpecies; i++)
-        forward_solution_Vector[i] = 0;
+    sensitivityEngine.initialize(numOfSpecies);
     direct = false;
-
-    // Simultaneous Derivatives
-
-    numOfDerivatives = 0;
-    z_predictor_derivatives = NULL;
-    z_corrector_derivatives = NULL;
-    corrector_derivatives = NULL;
-    corrector_old_derivatives = NULL;
-    solution_Vector_derivatives = NULL;
-    y_seed_derivatives = NULL;
-    p_seed_derivatives = NULL;
-    z_corrector_derivatives_old = NULL;
-
-    error_weights_derivatives = NULL;
-    absolut_error_derivatives = NULL;
-    relative_error_derivatives = NULL;
-
-    reachableError_derivatives.clear();
-
-    adjointTapePointer = NULL;
 
     solution_adjoint_species = NULL;
     solution_adjoint_parameter = NULL;
-
-    possible_adjoint_order = 0;
-    start_adjoint_from_forward_mode = true;
 
     stored_adjoint_order = 0;
 
@@ -254,7 +229,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
                                relative_error_derivatives_, absolut_error_derivatives_,
                                numOfDerivatives_);
 
-    adjointTapePointer = NULL;
+    sensitivityEngine.adjointTapePointer = NULL;
 
     stats.acceptedSteps = 0;
     stats.rejectedSteps = 0;
@@ -349,7 +324,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
                                relative_error_derivatives_, absolut_error_derivatives_,
                                numOfDerivatives_);
 
-    adjointTapePointer = NULL;
+    sensitivityEngine.adjointTapePointer = NULL;
 
     stats.acceptedSteps = 0;
     stats.rejectedSteps = 0;
@@ -449,7 +424,7 @@ bool BDFIntegrator<Scalar>::resetIntegration(
                                relative_error_derivatives_, absolut_error_derivatives_,
                                numOfDerivatives_);
 
-    adjointTapePointer = NULL;
+    sensitivityEngine.adjointTapePointer = NULL;
 
     stats.acceptedSteps = 0;
     stats.rejectedSteps = 0;
@@ -464,8 +439,8 @@ bool BDFIntegrator<Scalar>::resetIntegration(
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                                                unsigned int maximal_Stepsize) {
-    if (!start_adjoint_from_forward_mode)
-        adjointTapePointer = NULL;
+    if (!sensitivityEngine.start_adjoint_from_forward_mode)
+        sensitivityEngine.adjointTapePointer = NULL;
     if (internalError) {
         YABI_LOG_ERROR("internal error please reset integration!");
 
@@ -495,10 +470,11 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
         for (j = 0; j < numOfSpecies; j++)
             nordsieck.corrector_old[j] = nordsieck.corrector[j];
 
-        if (numOfDerivatives > 0)
-            for (z = 0; z < numOfDerivatives; z++)
+        if (sensitivityEngine.numOfDerivatives > 0)
+            for (z = 0; z < sensitivityEngine.numOfDerivatives; z++)
                 for (j = 0; j < numOfSpecies; j++)
-                    corrector_old_derivatives[z][j] = corrector_derivatives[z][j];
+                    sensitivityEngine.corrector_old_derivatives[z][j] =
+                        sensitivityEngine.corrector_derivatives[z][j];
 
         newtonSolver.setJacobian = false;
         newtonSolver.setNewP = config.updateEveryP;
@@ -510,7 +486,7 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                 return false;
 
             ReplayTape *tape = createReplayTapeNode();
-            if (getTAPE == true && intermediateTAPE == NULL)
+            if (sensitivityEngine.getTAPE == true && intermediateTAPE == NULL)
                 intermediateTAPE = endTAPE;
 
             tape->calculate_output = false;
@@ -530,14 +506,15 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
             for (z = nordsieck.order_corrector + 1; z < 7; z++)
                 nordsieck.z_corrector_old[z * numOfSpecies + j] = 0.0;
         }
-        if (numOfDerivatives > 0) {
-            for (z = 0; z < numOfDerivatives; z++)
+        if (sensitivityEngine.numOfDerivatives > 0) {
+            for (z = 0; z < sensitivityEngine.numOfDerivatives; z++)
                 for (j = 0; j < numOfSpecies; j++) {
                     for (k = 0; k <= nordsieck.order_corrector; k++)
-                        z_corrector_derivatives_old[z][numOfSpecies * k + j] =
-                            z_corrector_derivatives[z][numOfSpecies * k + j];
+                        sensitivityEngine.z_corrector_derivatives_old[z][numOfSpecies * k + j] =
+                            sensitivityEngine.z_corrector_derivatives[z][numOfSpecies * k + j];
                     for (k = nordsieck.order_corrector + 1; k < 7; k++)
-                        z_corrector_derivatives_old[z][numOfSpecies * k + j] = 0.0;
+                        sensitivityEngine.z_corrector_derivatives_old[z][numOfSpecies * k + j] =
+                            0.0;
                 }
         }
         newtonSolver.newtonFAIL = 0;
@@ -549,12 +526,13 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
                     for (z = 0; z <= nordsieck.order_corrector; z++)
                         nordsieck.z_corrector[z * numOfSpecies + j] =
                             nordsieck.z_corrector_old[z * numOfSpecies + j] * (Scalar)pow(temp, z);
-                if (numOfDerivatives > 0)
-                    for (z = 0; z < numOfDerivatives; z++)
+                if (sensitivityEngine.numOfDerivatives > 0)
+                    for (z = 0; z < sensitivityEngine.numOfDerivatives; z++)
                         for (j = 0; j < numOfSpecies; j++)
                             for (k = 0; k <= nordsieck.order_corrector; k++)
-                                z_corrector_derivatives[z][numOfSpecies * k + j] =
-                                    z_corrector_derivatives_old[z][numOfSpecies * k + j] *
+                                sensitivityEngine.z_corrector_derivatives[z][numOfSpecies * k + j] =
+                                    sensitivityEngine
+                                        .z_corrector_derivatives_old[z][numOfSpecies * k + j] *
                                     (Scalar)pow(temp, k);
             }
             for (j = 5; j > 0; j--)
@@ -662,9 +640,10 @@ template <typename Scalar>
 bool BDFIntegrator<Scalar>::getSimultaneousDerivativesVector(
     Scalar **solution_Vector_derivatives_) {
     unsigned int i, z;
-    for (z = 0; z < numOfDerivatives; z++)
+    for (z = 0; z < sensitivityEngine.numOfDerivatives; z++)
         for (i = 0; i < numOfSpecies; i++)
-            solution_Vector_derivatives_[z][i] = solution_Vector_derivatives[z][i];
+            solution_Vector_derivatives_[z][i] =
+                sensitivityEngine.solution_Vector_derivatives[z][i];
     return true;
 }
 
@@ -672,7 +651,7 @@ template <typename Scalar>
 bool BDFIntegrator<Scalar>::getForwardSolutionVector(Scalar *forward_solution_Vector_) {
     unsigned int i;
     for (i = 0; i < numOfSpecies; i++)
-        forward_solution_Vector_[i] = forward_solution_Vector[i];
+        forward_solution_Vector_[i] = sensitivityEngine.forward_solution_Vector[i];
     return true;
 }
 
@@ -861,63 +840,62 @@ template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
 
     // Simultaneous Derivatives
 
-    if (error_weights_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] error_weights_derivatives[i];
-        delete[] error_weights_derivatives;
+    if (sensitivityEngine.error_weights_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.error_weights_derivatives[i];
+        delete[] sensitivityEngine.error_weights_derivatives;
     }
-    error_weights_derivatives = NULL;
-    absolut_error_derivatives = NULL;
-    relative_error_derivatives = NULL;
+    sensitivityEngine.error_weights_derivatives = NULL;
+    sensitivityEngine.absolut_error_derivatives = NULL;
+    sensitivityEngine.relative_error_derivatives = NULL;
 
-    if (z_predictor_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_predictor_derivatives[i];
-        delete[] z_predictor_derivatives;
+    if (sensitivityEngine.z_predictor_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.z_predictor_derivatives[i];
+        delete[] sensitivityEngine.z_predictor_derivatives;
     }
-    z_predictor_derivatives = NULL;
-    if (z_corrector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_corrector_derivatives[i];
-        delete[] z_corrector_derivatives;
+    sensitivityEngine.z_predictor_derivatives = NULL;
+    if (sensitivityEngine.z_corrector_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.z_corrector_derivatives[i];
+        delete[] sensitivityEngine.z_corrector_derivatives;
     }
-    z_corrector_derivatives = NULL;
-    if (z_corrector_derivatives_old != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_corrector_derivatives_old[i];
-        delete[] z_corrector_derivatives_old;
+    sensitivityEngine.z_corrector_derivatives = NULL;
+    if (sensitivityEngine.z_corrector_derivatives_old != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.z_corrector_derivatives_old[i];
+        delete[] sensitivityEngine.z_corrector_derivatives_old;
     }
-    z_corrector_derivatives_old = NULL;
-    if (corrector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] corrector_derivatives[i];
-        delete[] corrector_derivatives;
+    sensitivityEngine.z_corrector_derivatives_old = NULL;
+    if (sensitivityEngine.corrector_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.corrector_derivatives[i];
+        delete[] sensitivityEngine.corrector_derivatives;
     }
-    corrector_derivatives = NULL;
-    if (corrector_old_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] corrector_old_derivatives[i];
-        delete[] corrector_old_derivatives;
+    sensitivityEngine.corrector_derivatives = NULL;
+    if (sensitivityEngine.corrector_old_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.corrector_old_derivatives[i];
+        delete[] sensitivityEngine.corrector_old_derivatives;
     }
-    corrector_old_derivatives = NULL;
-    if (solution_Vector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] solution_Vector_derivatives[i];
-        delete[] solution_Vector_derivatives;
+    sensitivityEngine.corrector_old_derivatives = NULL;
+    if (sensitivityEngine.solution_Vector_derivatives != NULL) {
+        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
+            delete[] sensitivityEngine.solution_Vector_derivatives[i];
+        delete[] sensitivityEngine.solution_Vector_derivatives;
     }
-    solution_Vector_derivatives = NULL;
+    sensitivityEngine.solution_Vector_derivatives = NULL;
 
     cppADFunList.clear();
 
-    if (!reachableError_derivatives.empty())
-        
+    if (!sensitivityEngine.reachableError_derivatives.empty())
 
-    // adjoint
-    if (solution_adjoint_species != NULL) {
-        for (i = 0; i < numOfSpecies; i++)
-            delete[] solution_adjoint_species[i];
-        delete[] solution_adjoint_species;
-    }
+        // adjoint
+        if (solution_adjoint_species != NULL) {
+            for (i = 0; i < numOfSpecies; i++)
+                delete[] solution_adjoint_species[i];
+            delete[] solution_adjoint_species;
+        }
     if (solution_adjoint_parameter != NULL) {
         for (i = 0; i < sizeOfParameter; i++)
             delete[] solution_adjoint_parameter[i];

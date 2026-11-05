@@ -33,128 +33,13 @@ bool BDFIntegrator<Scalar>::setSimultaneousDerivatives(Scalar **y_seed_derivativ
                                                        Scalar *relative_error_derivatives_,
                                                        Scalar **absolut_error_derivatives_,
                                                        unsigned int numOfDerivatives_) {
-    unsigned int i, j, k;
-    numOfDerivatives = numOfDerivatives_;
-    if (numOfDerivatives > 0 && y_seed_derivatives_ != NULL) {
-        relative_error_derivatives = relative_error_derivatives_;
-        absolut_error_derivatives = absolut_error_derivatives_;
-        y_seed_derivatives = y_seed_derivatives_;
-        p_seed_derivatives = p_seed_derivatives_;
-        reachableError_derivatives.resize(numOfDerivatives);
-        z_predictor_derivatives = new Scalar *[numOfDerivatives];
-        z_corrector_derivatives = new Scalar *[numOfDerivatives];
-        z_corrector_derivatives_old = new Scalar *[numOfDerivatives];
-        corrector_derivatives = new Scalar *[numOfDerivatives];
-        corrector_old_derivatives = new Scalar *[numOfDerivatives];
-        solution_Vector_derivatives = new Scalar *[numOfDerivatives];
-        error_weights_derivatives = new Scalar *[numOfDerivatives];
-        for (i = 0; i < numOfDerivatives; i++) {
-            z_predictor_derivatives[i] = new Scalar[numOfSpecies * 7];
-            z_corrector_derivatives[i] = new Scalar[numOfSpecies * 7];
-            z_corrector_derivatives_old[i] = new Scalar[numOfSpecies * 7];
-            corrector_derivatives[i] = new Scalar[numOfSpecies];
-            corrector_old_derivatives[i] = new Scalar[numOfSpecies];
-            solution_Vector_derivatives[i] = new Scalar[numOfSpecies];
-            error_weights_derivatives[i] = new Scalar[numOfSpecies];
-            for (j = 0; j < numOfSpecies; j++) {
-                error_weights_derivatives[i][j] = 0.0;
-                for (k = 0; k < 7; k++)
-                    z_predictor_derivatives[i][numOfSpecies * k + j] = 0.0;
-                z_corrector_derivatives[i][j] = y_seed_derivatives[i][j];
-                z_corrector_derivatives_old[i][j] = y_seed_derivatives[i][j];
-            }
-
-            unsigned int cppAD_argument_size = 0;
-            if (RHS_type == 0)
-                cppAD_argument_size = numOfSpecies;
-            if (RHS_type == 1)
-                cppAD_argument_size = numOfSpecies + 1;
-            if (RHS_type == 2)
-                cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
-
-            std::vector<Scalar> cppAD_argument(cppAD_argument_size);
-            for (j = 0; j < numOfSpecies; j++)
-                cppAD_argument[j] = y_seed_derivatives[i][j];
-
-            if (RHS_type > 0)
-                cppAD_argument[numOfSpecies] = 0.0;
-
-            if (RHS_type > 1)
-                for (j = 0; j < sizeOfParameter; j++)
-                    cppAD_argument[numOfSpecies + 1 + j] = p_seed_derivatives[i][j];
-
-            std::vector<Scalar> df(numOfSpecies);
-            df = RHS->Forward(1, cppAD_argument);
-
-            for (j = 0; j < numOfSpecies; j++) {
-                z_corrector_derivatives[i][numOfSpecies + j] = nordsieck.step_size_h * df[j];
-                z_corrector_derivatives_old[i][numOfSpecies + j] = nordsieck.step_size_h * df[j];
-            }
-            for (j = 0; j < numOfSpecies; j++)
-                for (k = 2; k < 7; k++) {
-                    z_corrector_derivatives[i][numOfSpecies * k + j] = 0.0;
-                    z_corrector_derivatives_old[i][numOfSpecies * k + j] = 0.0;
-                }
-        }
-    } else
-        numOfDerivatives = 0;
-    return true;
+    return sensitivityEngine.setSimultaneousDerivatives(
+        y_seed_derivatives_, p_seed_derivatives_, relative_error_derivatives_,
+        absolut_error_derivatives_, numOfDerivatives_);
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::freeSimultaneousDerivatives() {
-    unsigned int i;
-
-    if (error_weights_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] error_weights_derivatives[i];
-        delete[] error_weights_derivatives;
-    }
-    error_weights_derivatives = NULL;
-
-    if (z_predictor_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_predictor_derivatives[i];
-        delete[] z_predictor_derivatives;
-    }
-    z_predictor_derivatives = NULL;
-    if (z_corrector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_corrector_derivatives[i];
-        delete[] z_corrector_derivatives;
-    }
-    z_corrector_derivatives = NULL;
-    if (corrector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] corrector_derivatives[i];
-        delete[] corrector_derivatives;
-    }
-    corrector_derivatives = NULL;
-    if (corrector_old_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] corrector_old_derivatives[i];
-        delete[] corrector_old_derivatives;
-    }
-    corrector_old_derivatives = NULL;
-    if (solution_Vector_derivatives != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] solution_Vector_derivatives[i];
-        delete[] solution_Vector_derivatives;
-    }
-    solution_Vector_derivatives = NULL;
-
-    if (z_corrector_derivatives_old != NULL) {
-        for (i = 0; i < numOfDerivatives; i++)
-            delete[] z_corrector_derivatives_old[i];
-        delete[] z_corrector_derivatives_old;
-    }
-    z_corrector_derivatives_old = NULL;
-
-    if (!reachableError_derivatives.empty())
-        
-    reachableError_derivatives.clear();
-
-    numOfDerivatives = 0;
-    return true;
+    return sensitivityEngine.freeSimultaneousDerivatives();
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
@@ -165,16 +50,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
     startTAPE = nullptr;
     intermediateTAPE = nullptr;
     endTAPE = nullptr;
-    adjointTapePointer = nullptr;
+    sensitivityEngine.resetForwardBuffers();
 
     start_CppAD_tape = nullptr;
-
-    z_corrector_tape.clear();
-    z_predictor_tape.clear();
-    P_tape.clear();
-    ip_tape.clear();
-    scaling_D1_tape.clear();
-    scaling_D2_tape.clear();
 
     return true;
 }
@@ -182,8 +60,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::deleteOldTape() {
 template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
     deleteOldTape();
     intermediateCppADFunIterator = cppADFunList.begin();
-    getTAPE = false;
-    lastForwardOrder = 0;
+    sensitivityEngine.beginNewTape();
 
     if (start_CppAD_tape == NULL) {
         if (intermediateCppADFunIterator == cppADFunList.end()) {
@@ -224,8 +101,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::createNewTape() {
 
     start_CppAD_tape->Forward(0, cppAD_argument);
 
-    for (i = 0; i < numOfSpecies; i++)
-        forward_solution_Vector[i] = 0.0;
+    sensitivityEngine.zeroForwardSolution();
 
     return true;
 }

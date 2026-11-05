@@ -31,12 +31,12 @@ template <typename Scalar>
 bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
     unsigned int i, j, k, l;
 
-    if (adjointTapePointer == NULL) {
+    if (sensitivityEngine.adjointTapePointer == NULL) {
         std::cout << "Error: wrong use of reverse mode!" << std::endl;
 
         return false;
     }
-    if (order <= 0 || order > possible_adjoint_order) {
+    if (order <= 0 || order > sensitivityEngine.possible_adjoint_order) {
         std::cout << "Error: calculation of reverse run of order!" << order << "  is not possible!"
                   << std::endl;
 
@@ -66,22 +66,23 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
     }
 
     Scalar time_tape_adjoint;
-    if (start_adjoint_from_forward_mode) {
-        step_size_h_adjoint = step_size_h_tape;
-        order_corrector_adjoint = order_corrector_tape;
+    if (sensitivityEngine.start_adjoint_from_forward_mode) {
+        step_size_h_adjoint = sensitivityEngine.step_size_h_tape;
+        order_corrector_adjoint = sensitivityEngine.order_corrector_tape;
         for (i = 0; i < 6; i++)
-            stepSizeSet_adjoint[i] = stepSizeSet_tape[i];
-        time_tape_adjoint = time_tape;
+            stepSizeSet_adjoint[i] = sensitivityEngine.stepSizeSet_tape[i];
+        time_tape_adjoint = sensitivityEngine.time_tape;
         for (i = 0; i < 7; i++)
-            l_i_adjoint[i] = l_i_tape[i];
+            l_i_adjoint[i] = sensitivityEngine.l_i_tape[i];
 
         if (!direct) {
             for (i = 0; i < numOfSpecies; i++) {
-                scaling_D1_adjoint[i] = scaling_D1_tape[i];
-                scaling_D2_adjoint[i] = scaling_D2_tape[i];
-                ip_adjoint[i] = ip_tape[i];
+                scaling_D1_adjoint[i] = sensitivityEngine.scaling_D1_tape[i];
+                scaling_D2_adjoint[i] = sensitivityEngine.scaling_D2_tape[i];
+                ip_adjoint[i] = sensitivityEngine.ip_tape[i];
                 for (j = 0; j < numOfSpecies; j++)
-                    P_adjoint[i * numOfSpecies + j] = P_tape[i * numOfSpecies + j];
+                    P_adjoint[i * numOfSpecies + j] =
+                        sensitivityEngine.P_tape[i * numOfSpecies + j];
             }
         }
     } else {
@@ -137,15 +138,16 @@ bool BDFIntegrator<Scalar>::reverse(unsigned int order, Scalar *seed_weights) {
                 if (k == 0 && j <= order_corrector_adjoint) {
                     z_adjoint[k][numOfSpecies * j + i] =
                         seed_weights[i] *
-                        (Scalar)pow((adjointTapePointer->timePoint - time_tape_adjoint) /
-                                        step_size_h_adjoint,
-                                    j);
+                        (Scalar)pow(
+                            (sensitivityEngine.adjointTapePointer->timePoint - time_tape_adjoint) /
+                                step_size_h_adjoint,
+                            j);
                 }
             }
         }
     }
 
-    adjointIntermediatePointer = adjointTapePointer;
+    adjointIntermediatePointer = sensitivityEngine.adjointTapePointer;
     adjointStepSizePointer = NULL;
     adjointIterationMatrixPointer = NULL;
 

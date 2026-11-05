@@ -36,8 +36,9 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::calculate_corrector_vecto
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_corrector() {
-    return nordsieck.calculate_next_corrector(numOfSpecies, numOfDerivatives, corrector_derivatives,
-                                              z_predictor_derivatives, z_corrector_derivatives);
+    return nordsieck.calculate_next_corrector(
+        numOfSpecies, sensitivityEngine.numOfDerivatives, sensitivityEngine.corrector_derivatives,
+        sensitivityEngine.z_predictor_derivatives, sensitivityEngine.z_corrector_derivatives);
 }
 
 template <typename Scalar> unsigned int BDFIntegrator<Scalar>::accept_corrector_vector() {

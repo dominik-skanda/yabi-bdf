@@ -49,15 +49,17 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_l_vector
 }
 
 template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_next_predictor() {
-    return nordsieck.calculate_next_predictor(numOfSpecies, numOfDerivatives,
-                                              z_corrector_derivatives, z_predictor_derivatives);
+    return nordsieck.calculate_next_predictor(numOfSpecies, sensitivityEngine.numOfDerivatives,
+                                              sensitivityEngine.z_corrector_derivatives,
+                                              sensitivityEngine.z_predictor_derivatives);
 }
 
 template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
     detail::StepDecision decision = stepController.prepareNextStep(
-        numOfSpecies, numOfDerivatives, error_weights, reachableError, reachableError_derivatives,
-        z_corrector_derivatives, corrector_derivatives, corrector_old_derivatives,
-        error_weights_derivatives, minimalEta, max_StepLength, t_ende);
+        numOfSpecies, sensitivityEngine.numOfDerivatives, error_weights, reachableError,
+        sensitivityEngine.reachableError_derivatives, sensitivityEngine.z_corrector_derivatives,
+        sensitivityEngine.corrector_derivatives, sensitivityEngine.corrector_old_derivatives,
+        sensitivityEngine.error_weights_derivatives, minimalEta, max_StepLength, t_ende);
 
     if (taping) {
         if (decision.orderUp && decision.orderDown)
@@ -70,7 +72,7 @@ template <typename Scalar> bool BDFIntegrator<Scalar>::prepare_next_step() {
             return false;
 
         ReplayTape *tape = createReplayTapeNode();
-        if (getTAPE == true && intermediateTAPE == NULL)
+        if (sensitivityEngine.getTAPE == true && intermediateTAPE == NULL)
             intermediateTAPE = endTAPE;
 
         tape->calculate_output = false;
@@ -85,15 +87,16 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
     if (internalError)
         return false;
 
-    nordsieck.calculate_output_vector(numOfSpecies, numOfDerivatives, z_corrector_derivatives,
-                                      solution_Vector_derivatives, t_ende);
+    nordsieck.calculate_output_vector(numOfSpecies, sensitivityEngine.numOfDerivatives,
+                                      sensitivityEngine.z_corrector_derivatives,
+                                      sensitivityEngine.solution_Vector_derivatives, t_ende);
 
     if (taping) {
         if (endTAPE == NULL && startTAPE != NULL)
             return false;
 
         ReplayTape *tape = createReplayTapeNode();
-        if (getTAPE == true && intermediateTAPE == NULL)
+        if (sensitivityEngine.getTAPE == true && intermediateTAPE == NULL)
             intermediateTAPE = endTAPE;
 
         tape->calculate_output = true;
@@ -102,9 +105,9 @@ template <typename Scalar> inline bool BDFIntegrator<Scalar>::calculate_output_v
         tape->orderUP = false;
         tape->orderDOWN = false;
 
-        adjointTapePointer = endTAPE;
-        possible_adjoint_order = 1;
-        start_adjoint_from_forward_mode = false;
+        sensitivityEngine.adjointTapePointer = endTAPE;
+        sensitivityEngine.possible_adjoint_order = 1;
+        sensitivityEngine.start_adjoint_from_forward_mode = false;
     }
     return true;
 }

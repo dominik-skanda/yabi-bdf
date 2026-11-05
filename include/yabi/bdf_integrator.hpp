@@ -43,6 +43,7 @@
     #include <yabi/detail/newton_solver.hpp>
     #include <yabi/detail/nordsieck_state.hpp>
     #include <yabi/detail/replay_tape.hpp>
+    #include <yabi/detail/sensitivity_engine.hpp>
     #include <yabi/detail/step_controller.hpp>
     #include <yabi/linear_algebra.hpp>
 
@@ -204,41 +205,21 @@ template <class Scalar> class BDFIntegrator {
     inline bool calculate_error_weights(Scalar *errorWeights, Scalar *yWeight,
                                         Scalar *absoluteError, Scalar &relativeError);
 
-    // Simultaneous Derivatives
-    Scalar **z_predictor_derivatives;
-    Scalar **z_corrector_derivatives;
-    Scalar **z_corrector_derivatives_old;
-    Scalar **y_seed_derivatives;
-    Scalar **p_seed_derivatives;
-
-    unsigned int numOfDerivatives;
+    // Simultaneous-derivative state lives in sensitivityEngine (see
+    // detail/sensitivity_engine.hpp).
 
     bool isIntegrattionStarted;
     bool isIntegrattionPerformed;
 
     unsigned int numOfSpecies;
 
-    // Simultaneous Derivatives
-    Scalar **corrector_derivatives;
-
-    // Simultaneous Derivatives
-    Scalar **corrector_old_derivatives;
-
     std::vector<Scalar> error_weights;
     std::vector<Scalar> absolut_error;
     Scalar relative_error;
-    // Simultaneous Derivatives
-    Scalar **error_weights_derivatives;
-    Scalar **absolut_error_derivatives;
-    Scalar *relative_error_derivatives; // non-owning: points into the user's seed array
 
     Scalar t_ende;
-    // Simultaneous Derivatives
-    Scalar **solution_Vector_derivatives;
 
     Scalar minimalEta;
-
-    // Simultaneous Derivatives
 
     Scalar max_StepLength;
     Scalar start_integration_time;
@@ -247,7 +228,6 @@ template <class Scalar> class BDFIntegrator {
     unsigned int sizeOfParameter;
 
     Scalar reachableError;
-    std::vector<Scalar> reachableError_derivatives;
 
     // SENSITIVITY GENERATION
 
@@ -273,45 +253,20 @@ template <class Scalar> class BDFIntegrator {
     bool direct;
 
     AbstractRHS<Scalar> *start_CppAD_tape;
-    std::vector<Scalar> correctorVector_tape;
     Scalar startTape_stepSize;
 
-    Scalar l_i_tape[7];
-    Scalar time_tape;
-    Scalar stepSizeSet_tape[6];
-    std::vector<Scalar> z_predictor_tape;
-    std::vector<Scalar> z_corrector_tape;
-    Scalar step_size_h_tape;
-    std::vector<Scalar> forward_solution_Vector;
-    unsigned int order_corrector_tape;
     bool taping;
-    bool getTAPE;
-    unsigned int lastForwardOrder;
-    std::vector<Scalar> P_tape;
-    std::vector<int> ip_tape;
-    std::vector<long> scaling_D1_tape;
-    std::vector<long> scaling_D2_tape;
     bool internalError;
 
     bool deleteOldTape();
     bool createNewTape();
-    inline bool calculate_next_predictor_forward();
-    inline bool calculate_l_vector_forward();
-    bool calculate_corrector_vector_forward(unsigned int order, Scalar *y_seed,
-                                            Scalar *parameter_seed);
-    inline bool calculate_next_corrector_forward();
-    inline bool calculate_output_vector_forward();
 
     // adjoint
-
-    ReplayTape *adjointTapePointer;
 
     Scalar **solution_adjoint_species;
     Scalar **solution_adjoint_parameter;
 
-    unsigned int possible_adjoint_order;
     unsigned int stored_adjoint_order;
-    bool start_adjoint_from_forward_mode;
 
     // LAPACK WRAPPER
 
@@ -332,6 +287,11 @@ template <class Scalar> class BDFIntegrator {
     // Step-size/order selection on top of the Nordsieck state (see
     // detail/step_controller.hpp).
     detail::StepController<Scalar> stepController;
+
+    // Forward/simultaneous sensitivity state and replay (see
+    // detail/sensitivity_engine.hpp).  Declared before NewtonSolver because the
+    // Newton code borrows the simultaneous-derivative mirrors.
+    detail::SensitivityEngine<Scalar> sensitivityEngine;
 
     // Newton iteration, Jacobian assembly and Newton-owned matrix state (see
     // detail/newton_solver.hpp).
