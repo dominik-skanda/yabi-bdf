@@ -14,11 +14,13 @@
 #include <vector>
 
 #include <yabi/abstract_rhs.hpp>
+#include <yabi/csc_matrix.hpp>
 #include <yabi/detail/integrator_config.hpp>
 #include <yabi/detail/nordsieck_state.hpp>
 #include <yabi/detail/replay_tape.hpp>
 #include <yabi/detail/step_controller.hpp>
 #include <yabi/linear_solver.hpp>
+#include <yabi/sparsity_pattern.hpp>
 
 namespace yabi {
 namespace detail {
@@ -147,6 +149,8 @@ template <typename Scalar> class NewtonSolver {
             cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
         std::vector<Scalar> cppAD_argument(cppAD_argument_size);
+        // T31: native CSC assembly is used only for a plain state solve.
+        const bool useSparse = sparsePathAvailable() && prepareSparsePattern();
         Scalar *root = new Scalar[numOfSpecies];
 
         for (i = 0; i < numOfSpecies; i++)
@@ -252,66 +256,104 @@ template <typename Scalar> class NewtonSolver {
                         cppAD_argument[numOfSpecies + 1 + i] = parameter[i];
                 RHS->Forward(0, cppAD_argument);
 
-                std::vector<Scalar> dx(cppAD_argument_size);
-                std::vector<Scalar> df(numOfSpecies);
-                for (j = 0; j < cppAD_argument_size; j++)
-                    dx[j] = 0.0;
-                for (j = 0; j < numOfSpecies; j++) {
-                    dx[j] = 1.0;
-                    df = RHS->Forward(1, dx);
-                    for (i = 0; i < numOfSpecies; i++) {
-                        if (std::isnan(df[i]) || std::isinf(df[i])) {
+                if (useSparse) {
+                    std::vector<Scalar> values;
+                    if (!RHS->sparseJacobian(cppAD_argument, sparsePattern, values) ||
+                        values.size() != J_csc.val.size()) {
+                        YABI_LOG_ERROR("ERROR: sparse Jacobian evaluation failed!");
+
+                        internalError = true;
+                        releaseWorkspace();
+                        return false;
+                    }
+                    for (std::size_t k = 0; k < values.size(); ++k)
+                        if (std::isnan(values[k]) || std::isinf(values[k])) {
                             YABI_LOG_ERROR("element of jacobian is nan or inf!");
 
                             internalError = true;
                             releaseWorkspace();
                             return false;
                         }
-                        J[i * numOfSpecies + j] = df[i];
-                    }
-                    dx[j] = 0.0;
-                }
+                    J_csc.val = std::move(values);
+                    formPFromJ();
 
-                for (j = 0; j < numOfSpecies; j++)
-                    for (k = 0; k < numOfSpecies; k++)
-                        if (j == k)
-                            P[k * numOfSpecies + j] =
-                                1.0 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
-                                       J[j * numOfSpecies + k]);
-                        else
-                            P[k * numOfSpecies + j] = -(nordsieck.step_size_h / nordsieck.l_i[1]) *
-                                                      J[j * numOfSpecies + k];
+                    if (!calculateNewtonScalingSparse()) {
+                        YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
-                // LU factor (and overwrite) the matrix P.data() and ip.data() and jp via pluggable
-                // solver
-                if (!calculateNewtonScaling()) {
-                    YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
-
-                    internalError = true;
-                    releaseWorkspace();
-                    return false;
-                }
-                if (linearSolver) {
-                    if (!linearSolver->initialize(numOfSpecies)) {
                         internalError = true;
                         releaseWorkspace();
                         return false;
                     }
-                    if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
-                                                 scaling_D2.data(), numOfSpecies)) {
+                    if (!linearSolver->factorizeCsc(P_csc, ip.data(), scaling_D1.data(),
+                                                    scaling_D2.data(), numOfSpecies)) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                         internalError = true;
                         releaseWorkspace();
                         return false;
                     }
                 } else {
-                    sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies,
-                                         ip.data());
-                    if (sign != 0) {
-                        YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
+                    std::vector<Scalar> dx(cppAD_argument_size);
+                    std::vector<Scalar> df(numOfSpecies);
+                    for (j = 0; j < cppAD_argument_size; j++)
+                        dx[j] = 0.0;
+                    for (j = 0; j < numOfSpecies; j++) {
+                        dx[j] = 1.0;
+                        df = RHS->Forward(1, dx);
+                        for (i = 0; i < numOfSpecies; i++) {
+                            if (std::isnan(df[i]) || std::isinf(df[i])) {
+                                YABI_LOG_ERROR("element of jacobian is nan or inf!");
+
+                                internalError = true;
+                                releaseWorkspace();
+                                return false;
+                            }
+                            J[i * numOfSpecies + j] = df[i];
+                        }
+                        dx[j] = 0.0;
+                    }
+
+                    for (j = 0; j < numOfSpecies; j++)
+                        for (k = 0; k < numOfSpecies; k++)
+                            if (j == k)
+                                P[k * numOfSpecies + j] =
+                                    1.0 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                           J[j * numOfSpecies + k]);
+                            else
+                                P[k * numOfSpecies + j] =
+                                    -(nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                    J[j * numOfSpecies + k];
+
+                    // LU factor (and overwrite) the matrix P.data() and ip.data() and jp via
+                    // pluggable solver
+                    if (!calculateNewtonScaling()) {
+                        YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
+
                         internalError = true;
                         releaseWorkspace();
                         return false;
+                    }
+                    if (linearSolver) {
+                        if (!linearSolver->initialize(numOfSpecies)) {
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
+                        if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
+                                                     scaling_D2.data(), numOfSpecies)) {
+                            YABI_LOG_ERROR("ERROR: LuFactor Failed!");
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
+                    } else {
+                        sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies,
+                                             ip.data());
+                        if (sign != 0) {
+                            YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
                     }
                 }
                 // Sensitivity Generation
@@ -340,45 +382,64 @@ template <typename Scalar> class NewtonSolver {
             if (setNewP == true && setJacobian == false && !wasNewPSet) {
                 stats.updateP++;
                 wasNewPSet = true;
-                for (j = 0; j < numOfSpecies; j++)
-                    for (k = 0; k < numOfSpecies; k++)
-                        if (j == k)
-                            P[k * numOfSpecies + j] =
-                                1.0 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
-                                       J[j * numOfSpecies + k]);
-                        else
-                            P[k * numOfSpecies + j] = -(nordsieck.step_size_h / nordsieck.l_i[1]) *
-                                                      J[j * numOfSpecies + k];
+                if (useSparse) {
+                    formPFromJ();
+                    if (!calculateNewtonScalingSparse()) {
+                        YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
-                // LU factor (and overwrite) the matrix P.data() via pluggable solver
-                if (!calculateNewtonScaling()) {
-                    YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
-
-                    internalError = true;
-                    releaseWorkspace();
-                    return false;
-                }
-                if (linearSolver) {
-                    if (!linearSolver->initialize(numOfSpecies)) {
                         internalError = true;
                         releaseWorkspace();
                         return false;
                     }
-                    if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
-                                                 scaling_D2.data(), numOfSpecies)) {
+                    if (!linearSolver->factorizeCsc(P_csc, ip.data(), scaling_D1.data(),
+                                                    scaling_D2.data(), numOfSpecies)) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                         internalError = true;
                         releaseWorkspace();
                         return false;
                     }
                 } else {
-                    sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies,
-                                         ip.data());
-                    if (sign != 0) {
-                        YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
+                    for (j = 0; j < numOfSpecies; j++)
+                        for (k = 0; k < numOfSpecies; k++)
+                            if (j == k)
+                                P[k * numOfSpecies + j] =
+                                    1.0 - ((nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                           J[j * numOfSpecies + k]);
+                            else
+                                P[k * numOfSpecies + j] =
+                                    -(nordsieck.step_size_h / nordsieck.l_i[1]) *
+                                    J[j * numOfSpecies + k];
+
+                    // LU factor (and overwrite) the matrix P.data() via pluggable solver
+                    if (!calculateNewtonScaling()) {
+                        YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
+
                         internalError = true;
                         releaseWorkspace();
                         return false;
+                    }
+                    if (linearSolver) {
+                        if (!linearSolver->initialize(numOfSpecies)) {
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
+                        if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
+                                                     scaling_D2.data(), numOfSpecies)) {
+                            YABI_LOG_ERROR("ERROR: LuFactor Failed!");
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
+                    } else {
+                        sign = linalg::GETRF(numOfSpecies, numOfSpecies, P.data(), numOfSpecies,
+                                             ip.data());
+                        if (sign != 0) {
+                            YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
+                            internalError = true;
+                            releaseWorkspace();
+                            return false;
+                        }
                     }
                 }
                 // Sensitivity Generation
@@ -442,17 +503,15 @@ template <typename Scalar> class NewtonSolver {
             for (j = 0; j < numOfSpecies; j++)
                 b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
-            if (linearSolver) {
+            if (useSparse) {
+                sign = linearSolver->solveCsc(P_csc, ip.data(), scaling_D1.data(),
+                                              scaling_D2.data(), b, numOfSpecies, 1);
+            } else if (linearSolver) {
                 sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
                                            scaling_D2.data(), b, numOfSpecies, 1);
             } else {
-                if (linearSolver) {
-                    sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
-                                               scaling_D2.data(), b, numOfSpecies, 1);
-                } else {
-                    sign = linalg::GETRS_NT(numOfSpecies, 1, P.data(), numOfSpecies, ip.data(), b,
-                                            numOfSpecies);
-                }
+                sign = linalg::GETRS_NT(numOfSpecies, 1, P.data(), numOfSpecies, ip.data(), b,
+                                        numOfSpecies);
             }
 
             for (j = 0; j < numOfSpecies; j++)
@@ -1515,6 +1574,90 @@ template <typename Scalar> class NewtonSolver {
     }
 
   private:
+    // ---- Native sparse Newton path (T31) ----
+    //
+    // Sparse assembly is used only for a plain state solve: sensitivity
+    // generation still records a dense P on the replay tape, and is left on the
+    // historical dense path.  Everything below is byte-for-byte the same
+    // algebra as the dense branches, just applied to CSC storage.
+    bool sparsePathAvailable() const {
+        return sparseAssembly && numOfDerivatives == 0 && !taping && linearSolver &&
+               linearSolver->supportsCsc();
+    }
+
+    bool prepareSparsePattern() {
+        if (sparsePatternReady)
+            return true;
+        SparsityPattern detected;
+        if (!RHS->jacobianSparsity(detected))
+            return false;
+        if (detected.rows != numOfSpecies || detected.cols != numOfSpecies || detected.empty())
+            return false;
+        sparsePattern = detected;
+        if (!J_csc.assignPattern(sparsePattern, false))
+            return false;
+        if (!P_csc.assignPattern(sparsePattern, true))
+            return false;
+        sparsePatternReady = true;
+        return true;
+    }
+
+    // P = I - (h/l1) * J, in the same column-major orientation as the dense
+    // path.  The diagonal is structural in P even when J has no diagonal entry.
+    void formPFromJ() {
+        const Scalar factor = nordsieck.step_size_h / nordsieck.l_i[1];
+        for (std::size_t j = 0; j < (std::size_t)numOfSpecies; ++j) {
+            int pj = P_csc.col_ptr[j];
+            const int pend = P_csc.col_ptr[j + 1];
+            int jj = J_csc.col_ptr[j];
+            const int jend = J_csc.col_ptr[j + 1];
+            for (; pj < pend; ++pj) {
+                const int row = P_csc.row_idx[(std::size_t)pj];
+                while (jj < jend && J_csc.row_idx[(std::size_t)jj] < row)
+                    ++jj;
+                const Scalar jvalue = (jj < jend && J_csc.row_idx[(std::size_t)jj] == row)
+                                          ? J_csc.val[(std::size_t)jj]
+                                          : (Scalar)0.0;
+                P_csc.val[(std::size_t)pj] =
+                    (row == (int)j) ? ((Scalar)1.0 - factor * jvalue) : (-factor * jvalue);
+            }
+        }
+    }
+
+    bool calculateNewtonScalingSparse() {
+        unsigned int i, j;
+        for (j = 0; j < numOfSpecies; j++) {
+            if (!(error_weights[j] > 0.0) || !std::isfinite(error_weights[j])) {
+                YABI_LOG_ERROR("ERROR: non-positive or non-finite error weight for species ", j,
+                               " (", error_weights[j], ")!");
+
+                internalError = true;
+                return false;
+            }
+            scaling_D2[j] = (int)std::floor(std::logb(error_weights[j]) + 0.5);
+        }
+
+        // D2 scales columns, exactly as the dense loop P[j*n+i] *= 2^D2[j].
+        P_csc.scaleColumns(scaling_D2);
+
+        // D1 is derived from the row sums and then scales rows.
+        std::vector<Scalar> rowSums;
+        P_csc.rowSums(rowSums);
+        for (i = 0; i < numOfSpecies; i++) {
+            if (!(rowSums[i] > 0.0) || !std::isfinite(rowSums[i])) {
+                YABI_LOG_ERROR("ERROR: cannot scale column ", i,
+                               " of the Newton matrix (column sum ", rowSums[i], ")!");
+
+                internalError = true;
+                return false;
+            }
+            scaling_D1[i] = -(int)std::ceil(std::logb(rowSums[i]));
+        }
+        P_csc.scaleRows(scaling_D1);
+
+        return true;
+    }
+
     NordsieckState<Scalar> &nordsieck;
     const IntegratorConfig<Scalar> &config;
     IntegratorStatistics &stats;
@@ -1560,6 +1703,16 @@ template <typename Scalar> class NewtonSolver {
     std::vector<int> ip;
     std::vector<long> scaling_D1;
     std::vector<long> scaling_D2;
+
+    // Native sparse state (T31).  When sparseAssembly is enabled and the RHS
+    // exposes a pattern, J_csc/P_csc are the source of truth and the dense P/J
+    // above are left untouched.
+    bool sparseAssembly = false;
+    bool sparsePatternReady = false;
+    SparsityPattern sparsePattern;
+    CscMatrix<Scalar> J_csc;
+    CscMatrix<Scalar> P_csc;
+
     bool setJacobian = false;
     bool setNewP = false;
     bool newtonIteration_Started = false;

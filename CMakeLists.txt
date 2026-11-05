@@ -213,6 +213,20 @@ if(UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY)
   target_link_libraries(yabi_heat1d_umfpack_sens_dense_api PRIVATE yabi ${UMFPACK_LIBRARY} amd cholmod colamd ccolamd camd suitesparseconfig lapack blas cppad_lib m)
 endif()
 
+# Optional T31 test: native CSC path + symbolic reuse with UMFPACK and KLU.
+# Registered only when both SuiteSparse solvers are available.
+find_path(KLU_INCLUDE_DIR klu.h PATHS /usr/include/suitesparse)
+find_library(KLU_LIBRARY klu)
+if(YABI_USE_CPPAD AND UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY AND KLU_INCLUDE_DIR AND KLU_LIBRARY)
+  add_executable(yabi_test_suitesparse_sparse testbench/suitesparse_sparse.cpp)
+  target_include_directories(yabi_test_suitesparse_sparse PRIVATE
+    ${UMFPACK_INCLUDE_DIR} ${KLU_INCLUDE_DIR})
+  target_link_libraries(yabi_test_suitesparse_sparse PRIVATE yabi
+    ${UMFPACK_LIBRARY} ${KLU_LIBRARY} amd cholmod colamd ccolamd camd suitesparseconfig
+    lapack blas cppad_lib m)
+  add_test(NAME suitesparse_sparse COMMAND yabi_test_suitesparse_sparse)
+endif()
+
 # -----------------------------------------------------------------
 # Plot runner (matplotlib / numpy / pandas) — external, not required
 # -----------------------------------------------------------------

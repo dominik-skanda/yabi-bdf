@@ -43,6 +43,32 @@ public:
         // linalg has nrhs param
         return linalg::GETRS_NT((int)n, (int)nrhs, P, (int)n, ipiv, b, (int)n);
     }
+
+    // Reference CSC path: expand to the historical dense layout and reuse the
+    // LAPACK factorization.  It lets the sparse assembly path be validated
+    // without SuiteSparse; it is not the production sparse path (see
+    // UmfpackLinearSolver / KluLinearSolver).
+    bool supportsCsc() const override { return true; }
+
+    bool factorizeCsc(const CscMatrix<Scalar> &P, int *ipiv, long *scalingD1,
+                      long *scalingD2, unsigned int n) override {
+        ++csc_factorizations_;
+        P.toDense(dense_);
+        return factorize(dense_.data(), ipiv, scalingD1, scalingD2, n);
+    }
+
+    int solveCsc(const CscMatrix<Scalar> &P, int *ipiv, long *scalingD1, long *scalingD2,
+                 Scalar *b, unsigned int n, unsigned int nrhs) override {
+        (void)P;
+        return solve(dense_.data(), ipiv, scalingD1, scalingD2, b, n, nrhs);
+    }
+
+    // Number of CSC factorizations (reference-path diagnostics / tests).
+    unsigned int cscFactorizations() const { return csc_factorizations_; }
+
+  private:
+    std::vector<Scalar> dense_;
+    unsigned int csc_factorizations_ = 0;
 };
 
 } // namespace yabi

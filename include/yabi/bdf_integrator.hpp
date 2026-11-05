@@ -130,14 +130,28 @@ template <class Scalar> class BDFIntegrator {
     bool setMinMemoryADFunObjectes(unsigned int MINnumberADFunObjects);
 
     // Set a custom linear solver (e.g. for future sparse support). The
-    // integrator takes ownership of the passed solver.
+    // integrator takes ownership of the passed solver.  Installing a solver
+    // whose CSC path is the production path (UMFPACK/KLU) automatically
+    // enables native sparse assembly; call setSparseAssembly(false) afterwards
+    // to keep the dense assembly path with that solver.
     void setLinearSolver(LinearSolver<Scalar> *solver) {
         linearSolver.reset(solver);
         if (linearSolver) {
             linearSolver->initialize(numOfSpecies);
+            if (linearSolver->prefersSparseFactorization())
+                newtonSolver.sparseAssembly = true;
         }
     }
     LinearSolver<Scalar> *getLinearSolver() const { return linearSolver.get(); }
+
+    // Native sparse Newton assembly (T31): detect the Jacobian pattern once,
+    // assemble J/P in CSC and reuse the solver's symbolic factorization while
+    // the pattern is unchanged.  It is additionally gated on the RHS exposing
+    // a sparsity pattern and on the solve being a plain state solve (no
+    // sensitivity replay tape).  With the default DenseLUSolver this uses the
+    // CSC reference path, which is useful for validation but not faster.
+    void setSparseAssembly(bool enabled) { newtonSolver.sparseAssembly = enabled; }
+    bool getSparseAssembly() const { return newtonSolver.sparseAssembly; }
 
     bool printStatistic(std::ostream &outstream = std::cout, std::string delim = " ") {
         outstream << "INTEGRATION STATISTIC:" << delim << " " << std::endl
