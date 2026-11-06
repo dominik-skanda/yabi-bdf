@@ -7,7 +7,7 @@ in CI and during development.
 | directory | label | scope |
 |---|---|---|
 | `tests/unit/` | `unit` | one executable per component; isolated contracts, no full integration run |
-| `tests/component/` | `component` | cross-component behaviour (native sparse assembly, SuiteSparse symbolic reuse) |
+| `tests/component/` | `component` | cross-component behaviour (native sparse assembly, matrix-free Newton–Krylov, SuiteSparse symbolic reuse) |
 | `tests/system/` | `system` | mathematical benchmarks and regressions on canonical ODE problems |
 
 The self-checking programs in `examples/` are registered under the `example`
@@ -56,8 +56,10 @@ Current coverage:
 - `test_linear_solver` — dense LAPACK path and the CSC reference path
 - `test_sparsity_pattern` — column-oriented pattern equality and shape
 - `test_csc_matrix` — CSC construction, diagonal insertion, scaling, validation
-- `test_cppad_rhs_sparsity` — CppAD sparse Jacobian detection and values
-  (CppAD builds only)
+- `test_cppad_rhs_sparsity` — CppAD sparse Jacobian detection, values, and
+  `J·v` (CppAD builds only)
+- `test_krylov_solver` — GMRES/FGMRES/BiCGSTAB, preconditioners, direct
+  fallback, and dense delegation (both configurations)
 
 The CppAD RHS test is excluded automatically when `YABI_USE_CPPAD=OFF`; all
 other unit tests run in both configurations.
@@ -66,6 +68,10 @@ other unit tests run in both configurations.
 
 - `native_sparse.cpp` — CppAD sparse Jacobian → native CSC → sparse Newton path;
   asserts bit-identical results against the dense path.
+- `matrix_free_newton.cpp` — HIRES state solve through GMRES/FGMRES/BiCGSTAB and
+  the `J·v` operator, with Jacobi and exact-CSC preconditioners; asserts the
+  direct trajectory is reproduced with no CSC fallback and that forward
+  sensitivities still follow the explicit `J`/`H` path.
 - `suitesparse_sparse.cpp` — UMFPACK/KLU numeric factorization with symbolic
   reuse; registered only when both libraries are found.
 

@@ -115,6 +115,29 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    bool jacobianVectorProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &v,
+                               std::vector<Scalar> &result) const override {
+        const std::size_t n = fun_->Domain();
+        const std::size_t m = fun_->Range();
+        if (x.size() != n || v.size() != n)
+            return false;
+        // One CppAD call.  For q=1 and a full xq, CppAD's layout is
+        // interleaved per variable/component: xq[2*j] = x_j, xq[2*j+1] = v_j,
+        // and the result returns yq[2*i] = f_i, yq[2*i+1] = (J(x)*v)_i.
+        CppAD::vector<Scalar> xv(2 * n);
+        for (std::size_t i = 0; i < n; ++i) {
+            xv[2 * i] = x[i];
+            xv[2 * i + 1] = v[i];
+        }
+        CppAD::vector<Scalar> yv = fun_->Forward(1, xv);
+        if (yv.size() != 2 * m)
+            return false;
+        result.resize(m);
+        for (std::size_t i = 0; i < m; ++i)
+            result[i] = yv[2 * i + 1];
+        return true;
+    }
+
     bool sparseJacobian(const std::vector<Scalar> &x, const SparsityPattern &pattern,
                         std::vector<Scalar> &values) const override {
         if (!sparse_ready_ || sparse_pattern_ != pattern) {

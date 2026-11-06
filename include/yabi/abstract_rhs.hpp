@@ -48,6 +48,22 @@ template <typename Scalar> class AbstractRHS {
         (void)values;
         return false;
     }
+
+    // Matrix-free Jacobian-vector product J(x)*v.  x is the full Domain()
+    // argument and v has Domain() entries (state, then time, then parameters).
+    // The default implementation is stateful: it sets the point with
+    // Forward(0, x) and then evaluates Forward(1, v), which is exactly the
+    // existing AbstractRHS contract.  Backends may override it with a
+    // one-evaluation implementation.
+    virtual bool jacobianVectorProduct(const std::vector<Scalar> &x,
+                                       const std::vector<Scalar> &v,
+                                       std::vector<Scalar> &result) const {
+        if (v.size() != Domain() || x.size() != Domain())
+            return false;
+        Forward(0, x);
+        result = Forward(1, v);
+        return result.size() == Range();
+    }
 };
 
 } // namespace yabi

@@ -150,10 +150,68 @@ void testStateBlockOnly() {
     yabi_test::check(max_diff < 1e-14, "parameterised sparse state block matches dense");
 }
 
+// The J*v hook is a single CppAD forward sweep; it must reproduce the explicit
+// Jacobian applied to the direction, including when the tape carries time and
+// parameter components in its domain.
+void testJacobianVectorProduct() {
+    const std::size_t n = 12;
+    CppAD::ADFun<double> fun = makeParameterizedTape(n);
+    yabi::CppADRHS<double> rhs(fun);
+
+    std::vector<double> x(n + 2);
+    for (std::size_t i = 0; i < n; ++i)
+        x[i] = 1.0 + 0.01 * (double)i;
+    x[n] = 3.0;     // time
+    x[n + 1] = 2.0; // parameter
+
+    std::vector<double> v(n + 2, 0.0);
+    for (std::size_t i = 0; i < n; ++i)
+        v[i] = 0.5 - 0.03 * (double)i;
+
+    std::vector<double> jv;
+    yabi_test::check(rhs.jacobianVectorProduct(x, v, jv), "jacobianVectorProduct succeeds");
+    yabi_test::check(jv.size() == n, "jacobianVectorProduct returns n state components");
+
+    // Explicit reference: assemble J column by column with Forward(1).
+    std::vector<double> jx(n, 0.0);
+    std::vector<double> dx(n + 2, 0.0);
+    for (std::size_t j = 0; j < n; ++j) {
+        dx[j] = 1.0;
+        std::vector<double> df = rhs.Forward(1, dx);
+        dx[j] = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+            jx[i] += df[i] * v[j];
+    }
+
+    double max_diff = 0.0;
+    for (std::size_t i = 0; i < n; ++i)
+        max_diff = std::max(max_diff, std::fabs(jv[i] - jx[i]));
+    yabi_test::check(max_diff < 1e-14, "J*v matches the explicit Jacobian product");
+
+    // The state-independent time/parameter components of v must not contribute
+    // to the state Jacobian product.
+    std::vector<double> v_state_only = v;
+    v_state_only[n] = 0.0;
+    v_state_only[n + 1] = 0.0;
+    std::vector<double> jv_state_only;
+    yabi_test::check(rhs.jacobianVectorProduct(x, v_state_only, jv_state_only),
+                     "jacobianVectorProduct with state-only direction");
+    double reuse_diff = 0.0;
+    for (std::size_t i = 0; i < n; ++i)
+        reuse_diff = std::max(reuse_diff, std::fabs(jv[i] - jv_state_only[i]));
+    yabi_test::check(reuse_diff < 1e-14, "J*v only uses the state block");
+
+    // Invalid sizes are rejected rather than silently returning garbage.
+    std::vector<double> bad(n, 0.0);
+    yabi_test::check(!rhs.jacobianVectorProduct(x, bad, jv),
+                     "jacobianVectorProduct rejects a wrong-size direction");
+}
+
 } // namespace
 
 int main() {
     testTridiagonalDetection();
     testStateBlockOnly();
+    testJacobianVectorProduct();
     return yabi_test::finish("CppADRHS sparsity unit tests");
 }

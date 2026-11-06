@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <yabi/csc_matrix.hpp>
+#include <yabi/matrix_free_operator.hpp>
 
 namespace yabi {
 
@@ -72,7 +73,17 @@ public:
         return -1;
     }
 
-    // Optional hooks for future sparse/direct iterative solvers
+    // ---- Matrix-free interface (T32) ----
+    //
+    // A Krylov solver advertises supportsMatrixFree().  The integrator then
+    // installs a non-owning operator for the current Newton matrix P and calls
+    // factorizeCsc()/solveCsc() exactly as it does for a CSC solver.  The
+    // operator outlives the solve and is only used by the solver that owns it.
+    virtual bool supportsMatrixFree() const { return false; }
+
+    virtual void setMatrixFreeOperator(const MatrixFreeOperator<Scalar> *op) { (void)op; }
+
+    // Optional hooks for other sparse/direct iterative solvers
     virtual void setJacobianPattern(void *pattern) { (void)pattern; }
     virtual void setUserData(void *user_data) { (void)user_data; }
 };

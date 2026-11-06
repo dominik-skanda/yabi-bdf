@@ -39,6 +39,8 @@ endforeach()
 # ---------------------------------------------------------------------------
 if(YABI_USE_CPPAD)
     yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/native_sparse.cpp" "component;sparse")
+    yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/matrix_free_newton.cpp"
+        "component;matrixfree")
 endif()
 
 # Native CSC + symbolic reuse requires both SuiteSparse solvers.  Registered

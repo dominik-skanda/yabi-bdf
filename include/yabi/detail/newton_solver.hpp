@@ -8,6 +8,7 @@
 #ifndef YABI_DETAIL_NEWTON_SOLVER_HPP
 #define YABI_DETAIL_NEWTON_SOLVER_HPP
 
+#include <algorithm>
 #include <cmath>
 #include <list>
 #include <memory>
@@ -150,8 +151,13 @@ template <typename Scalar> class NewtonSolver {
             cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
         std::vector<Scalar> cppAD_argument(cppAD_argument_size);
-        // T31: native CSC assembly is used only for a plain state solve.
-        const bool useSparse = sparsePathAvailable() && prepareSparsePattern();
+        // T31/T32: native CSC assembly is used only for a plain state solve.
+        // The matrix-free path still assembles the sparse pattern, but only to
+        // build/scale the preconditioner; J acts on vectors through the
+        // MatrixFreeOperator, never as a stored dense matrix.
+        const bool useMatrixFree = matrixFreePathAvailable() && prepareSparsePattern();
+        const bool useSparse = !useMatrixFree && sparsePathAvailable() && prepareSparsePattern();
+        const bool useSparseAssembly = useSparse || useMatrixFree;
         Scalar *root = new Scalar[numOfSpecies];
 
         for (i = 0; i < numOfSpecies; i++)
@@ -257,7 +263,7 @@ template <typename Scalar> class NewtonSolver {
                         cppAD_argument[numOfSpecies + 1 + i] = parameter[i];
                 RHS->Forward(0, cppAD_argument);
 
-                if (useSparse) {
+                if (useSparseAssembly) {
                     std::vector<Scalar> values;
                     if (!RHS->sparseJacobian(cppAD_argument, sparsePattern, values) ||
                         values.size() != J_csc.val.size()) {
@@ -284,6 +290,10 @@ template <typename Scalar> class NewtonSolver {
                         internalError = true;
                         releaseWorkspace();
                         return false;
+                    }
+                    if (useMatrixFree) {
+                        matrixFreeBase = cppAD_argument;
+                        configureMatrixFreeOperator();
                     }
                     if (!linearSolver->factorizeCsc(P_csc, ip.data(), scaling_D1.data(),
                                                     scaling_D2.data(), numOfSpecies)) {
@@ -383,7 +393,7 @@ template <typename Scalar> class NewtonSolver {
             if (setNewP == true && setJacobian == false && !wasNewPSet) {
                 stats.updateP++;
                 wasNewPSet = true;
-                if (useSparse) {
+                if (useSparseAssembly) {
                     formPFromJ();
                     if (!calculateNewtonScalingSparse()) {
                         YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
@@ -392,6 +402,8 @@ template <typename Scalar> class NewtonSolver {
                         releaseWorkspace();
                         return false;
                     }
+                    if (useMatrixFree)
+                        configureMatrixFreeOperator();
                     if (!linearSolver->factorizeCsc(P_csc, ip.data(), scaling_D1.data(),
                                                     scaling_D2.data(), numOfSpecies)) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed!");
@@ -504,7 +516,7 @@ template <typename Scalar> class NewtonSolver {
             for (j = 0; j < numOfSpecies; j++)
                 b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
-            if (useSparse) {
+            if (useSparseAssembly) {
                 sign = linearSolver->solveCsc(P_csc, ip.data(), scaling_D1.data(),
                                               scaling_D2.data(), b, numOfSpecies, 1);
             } else if (linearSolver) {
@@ -513,6 +525,13 @@ template <typename Scalar> class NewtonSolver {
             } else {
                 sign = linalg::GETRS_NT(numOfSpecies, 1, P.data(), numOfSpecies, ip.data(), b,
                                         numOfSpecies);
+            }
+            if (sign != 0) {
+                YABI_LOG_ERROR("ERROR: linear solve failed (info=", sign, ")!");
+
+                internalError = true;
+                releaseWorkspace();
+                return false;
             }
 
             for (j = 0; j < numOfSpecies; j++)
@@ -1625,6 +1644,73 @@ template <typename Scalar> class NewtonSolver {
         }
     }
 
+    // ---- Matrix-free Newton path (T32) ----
+    //
+    // The state Newton solve may use a Krylov solver that only needs P*v.
+    // Sparse J/P are still assembled for the preconditioner and for the Newton
+    // scaling, but the Krylov iteration itself never sees a stored matrix J.
+    // The path is restricted to a plain state solve: sensitivity equations and
+    // the replay tape still require the explicit J/H blocks.
+    bool matrixFreePathAvailable() const {
+        return matrixFreeAssembly && numOfDerivatives == 0 && !taping && linearSolver &&
+               linearSolver->supportsMatrixFree();
+    }
+
+    // P_scaled * v = D1 * (I - (h/l1)*J(base)) * D2 * v, evaluated entirely
+    // through the RHS Jacobian-vector product.  The base point is captured when
+    // J is assembled (not when P is refreshed), so the operator and the
+    // preconditioner always describe the same Jacobian.
+    class NewtonMatrixFreeOperator : public MatrixFreeOperator<Scalar> {
+      public:
+        NewtonMatrixFreeOperator(AbstractRHS<Scalar> &rhs, unsigned int n,
+                                 const std::vector<Scalar> &base,
+                                 const std::vector<long> &scaling_D1,
+                                 const std::vector<long> &scaling_D2)
+            : rhs_(rhs), n_(n), base_(base), scaling_D1_(scaling_D1),
+              scaling_D2_(scaling_D2) {}
+
+        void setFactor(Scalar factor) { factor_ = factor; }
+
+        bool apply(const Scalar *x, Scalar *y) const override {
+            const std::size_t domain = rhs_.Domain();
+            if (base_.size() != domain || domain < n_)
+                return false;
+
+            std::vector<Scalar> direction(domain, Scalar(0));
+            std::vector<Scalar> scaled(n_, Scalar(0));
+            for (unsigned int j = 0; j < n_; ++j) {
+                scaled[j] = (Scalar)std::scalbn(x[j], (int)scaling_D2_[j]);
+                direction[j] = scaled[j];
+            }
+
+            std::vector<Scalar> jv;
+            if (!rhs_.jacobianVectorProduct(base_, direction, jv) || jv.size() < n_)
+                return false;
+
+            for (unsigned int i = 0; i < n_; ++i) {
+                const Scalar w = scaled[i] - factor_ * jv[i];
+                y[i] = (Scalar)std::scalbn(w, (int)scaling_D1_[i]);
+            }
+            return true;
+        }
+
+      private:
+        AbstractRHS<Scalar> &rhs_;
+        unsigned int n_;
+        const std::vector<Scalar> &base_;
+        const std::vector<long> &scaling_D1_;
+        const std::vector<long> &scaling_D2_;
+        Scalar factor_ = Scalar(0);
+    };
+
+    void configureMatrixFreeOperator() {
+        if (!matrixFreeOperator)
+            matrixFreeOperator.reset(new NewtonMatrixFreeOperator(
+                *RHS, numOfSpecies, matrixFreeBase, scaling_D1, scaling_D2));
+        matrixFreeOperator->setFactor(nordsieck.step_size_h / nordsieck.l_i[1]);
+        linearSolver->setMatrixFreeOperator(matrixFreeOperator.get());
+    }
+
     bool calculateNewtonScalingSparse() {
         unsigned int i, j;
         for (j = 0; j < numOfSpecies; j++) {
@@ -1713,6 +1799,12 @@ template <typename Scalar> class NewtonSolver {
     SparsityPattern sparsePattern;
     CscMatrix<Scalar> J_csc;
     CscMatrix<Scalar> P_csc;
+
+    // Matrix-free state (T32).  The operator is owned here and borrowed by the
+    // installed Krylov solver; matrixFreeBase is the J evaluation point.
+    bool matrixFreeAssembly = false;
+    std::vector<Scalar> matrixFreeBase;
+    std::unique_ptr<NewtonMatrixFreeOperator> matrixFreeOperator;
 
     bool setJacobian = false;
     bool setNewP = false;

@@ -3,7 +3,8 @@
 > **Note on origin:** This is a complete rewrite of the BDF integrator developed
 > by Dominik Skanda (based on his dissertation work at University of Freiburg).
 > The mathematical formulation follows BDF methods with sensitivity generation as presented in the [dissertation by Dominik Skanda](https://freidok.uni-freiburg.de/data/8787).  
-> It supports dense (LAPACK) and sparse (UMFPACK/KLU via SuiteSparse) linear solvers through a pluggable `LinearSolver` interface.  
+> It supports dense (LAPACK), sparse (UMFPACK/KLU via SuiteSparse), and matrix-free Newton–Krylov
+> (GMRES/FGMRES/BiCGSTAB via Jacobian–vector products) linear solvers through a pluggable `LinearSolver` interface.
 > The rewrite was carried out using **OpenCode** with the **Big Pickle** model and
 > **OpenRouter** free models. All algorithmic components (Nordsieck predictor,
 > simplified Newton, matrix scaling/conditioning strategy, corrector acceptance,
@@ -309,12 +310,13 @@ The tests are split into three ctest tiers below `tests/`:
 - `tests/unit/` — one focused executable per component (`IntegratorConfig`,
   `ReplayTape`, `NordsieckState`, `StepController`, `NewtonSolver`,
   `SensitivityEngine`, `AdjointEngine`, `DenseLUSolver`/CSC reference path,
-  `SparsityPattern`, `CscMatrix`, and the CppAD RHS sparsity hooks). These are
-  fast, dependency-light contract tests.
+  `SparsityPattern`, `CscMatrix`, CppAD RHS sparsity/`J·v`, and the Krylov
+  solver). These are fast, dependency-light contract tests.
 - `tests/component/` — cross-component integration: native CSC assembly and
-  the CppAD sparse Jacobian path (`native_sparse`), plus symbolic reuse with
-  UMFPACK/KLU (`suitesparse_sparse`, registered only when SuiteSparse is
-  available).
+  the CppAD sparse Jacobian path (`native_sparse`), matrix-free Newton–Krylov
+  against the direct HIRES trajectory (`matrix_free_newton`), plus symbolic
+  reuse with UMFPACK/KLU (`suitesparse_sparse`, registered only when
+  SuiteSparse is available).
 - `tests/system/` — the mathematical benchmark suite: linear problems,
   Robertson, Van der Pol, Brusselator, HIRES, Oregonator, Prothero–Robinson,
   damped pendulum, E5, large sparse/network systems, forward/reverse/
@@ -376,6 +378,30 @@ integrator.setLinearSolver(new yabi::UmfpackLinearSolver<double>()); // takes ow
 ```
 Defaults to dense LAPACK. Supports UMFPACK/KLU via SuiteSparse. See `examples/heat1d_umfpack_literature.cpp`.
 
+### Matrix-free Newton–Krylov (state solve)
+```cpp
+#include <yabi/bdf_integrator.hpp>
+#include <yabi/matrix_free_solver.hpp>
+
+auto *solver = new yabi::GmresLinearSolver<double>();
+solver->setPreconditioner(yabi::KrylovPreconditioner::Jacobi); // default
+solver->setTolerance(1e-12, 0.0, 200, 30);                     // rtol, atol, max it, restart
+integrator.setLinearSolver(solver); // takes ownership; auto-enables matrix-free assembly
+```
+`FgmresLinearSolver` and `BicgstabLinearSolver` are drop-in alternatives.
+The Krylov iteration drives the **state** Newton solve through the RHS
+Jacobian–vector product (`AbstractRHS::jacobianVectorProduct`, one CppAD
+`Forward(1)` sweep for AD tapes) and never sees a stored dense `J`. The scaled
+CSC `P` is still assembled for the Newton scaling and the preconditioner
+(`Jacobi` or the exact `Direct` solve). The path requires an RHS sparsity
+pattern; without one the historical dense solve is used.
+
+Sensitivities are deliberately unchanged: forward/reverse/simultaneous
+sensitivity still uses the explicit `J`/`H` blocks and is not matrix-free.
+`tests/component/matrix_free_newton.cpp` verifies all three Krylov methods on
+HIRES against the direct trajectory and checks that the sensitivity result is
+unchanged.
+
 ### Pure/manual ODE interface (no CppAD dependency in user code)
 Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `tests/system/manual_sensitivity_pure.cpp`.
 
@@ -383,7 +409,7 @@ Users provide ODE as `std::function<void(double,const double*,int,double*)>` via
 ```sh
 ctest --test-dir build --output-on-failure   # all tiers
 ctest --test-dir build -L unit               # isolated component contracts
-ctest --test-dir build -L component          # native sparse / SuiteSparse
+ctest --test-dir build -L component          # native sparse, matrix-free, SuiteSparse
 ctest --test-dir build -L system             # mathematical benchmarks
 ./run_tests.sh                                # verbose full run
 ```
@@ -405,6 +431,8 @@ ctest --test-dir build -L system             # mathematical benchmarks
 - `DenseLUSolver<double>` (default, LAPACK `dgetrf`/`dgetrs`)
 - `UmfpackLinearSolver<double>` (SuiteSparse UMFPACK)
 - `KluLinearSolver<double>` (SuiteSparse KLU)
+- `GmresLinearSolver<double>` / `FgmresLinearSolver<double>` / `BicgstabLinearSolver<double>`
+  (matrix-free state Newton solve via `J·v`; see above)
 
 **Connect your own solver (complete example):**
 ```cpp

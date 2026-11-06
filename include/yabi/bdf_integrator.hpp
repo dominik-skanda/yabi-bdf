@@ -140,6 +140,8 @@ template <class Scalar> class BDFIntegrator {
             linearSolver->initialize(numOfSpecies);
             if (linearSolver->prefersSparseFactorization())
                 newtonSolver.sparseAssembly = true;
+            if (linearSolver->supportsMatrixFree())
+                newtonSolver.matrixFreeAssembly = true;
         }
     }
     LinearSolver<Scalar> *getLinearSolver() const { return linearSolver.get(); }
@@ -152,6 +154,14 @@ template <class Scalar> class BDFIntegrator {
     // CSC reference path, which is useful for validation but not faster.
     void setSparseAssembly(bool enabled) { newtonSolver.sparseAssembly = enabled; }
     bool getSparseAssembly() const { return newtonSolver.sparseAssembly; }
+
+    // Matrix-free state Newton solve (T32): when a Krylov solver is installed,
+    // P*v is evaluated through the RHS Jacobian-vector product instead of a
+    // stored dense J.  J/P are still assembled in CSC for scaling and the
+    // preconditioner, and the path is used only for plain state solves; the
+    // sensitivity equations keep their explicit J/H path.
+    void setMatrixFreeAssembly(bool enabled) { newtonSolver.matrixFreeAssembly = enabled; }
+    bool getMatrixFreeAssembly() const { return newtonSolver.matrixFreeAssembly; }
 
     bool printStatistic(std::ostream &outstream = std::cout, std::string delim = " ") {
         outstream << "INTEGRATION STATISTIC:" << delim << " " << std::endl
