@@ -155,9 +155,18 @@ template <typename Scalar> class NewtonSolver {
         // The matrix-free path still assembles the sparse pattern, but only to
         // build/scale the preconditioner; J acts on vectors through the
         // MatrixFreeOperator, never as a stored dense matrix.
-        const bool useMatrixFree = matrixFreePathAvailable() && prepareSparsePattern();
-        const bool useSparse = !useMatrixFree && sparsePathAvailable() && prepareSparsePattern();
+        const bool matrixFreeRequested = matrixFreePathAvailable();
+        const bool sparseRequested = !matrixFreeRequested && sparsePathAvailable();
+        const bool needSparsePattern = matrixFreeRequested || sparseRequested;
+        const bool sparsePatternReadyForSolve = !needSparsePattern || prepareSparsePattern();
+        const bool useMatrixFree = matrixFreeRequested && sparsePatternReadyForSolve;
+        const bool useSparse = sparseRequested && sparsePatternReadyForSolve;
         const bool useSparseAssembly = useSparse || useMatrixFree;
+        if (matrixFreeRequested && !sparsePatternReadyForSolve && !matrixFreeWarned) {
+            matrixFreeWarned = true;
+            YABI_LOG_WARN("matrix-free solver installed but the right-hand side exposes no Jacobian "
+                          "sparsity pattern; using the dense explicit path");
+        }
         Scalar *root = new Scalar[numOfSpecies];
 
         for (i = 0; i < numOfSpecies; i++)
@@ -1803,6 +1812,7 @@ template <typename Scalar> class NewtonSolver {
     // Matrix-free state (T32).  The operator is owned here and borrowed by the
     // installed Krylov solver; matrixFreeBase is the J evaluation point.
     bool matrixFreeAssembly = false;
+    bool matrixFreeWarned = false;
     std::vector<Scalar> matrixFreeBase;
     std::unique_ptr<NewtonMatrixFreeOperator> matrixFreeOperator;
 

@@ -52,11 +52,13 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         diagonal_.clear();
         jacobi_valid_ = false;
         preconditioner_matrix_ = nullptr;
+        operator_ = nullptr;
         ip_.clear();
         scaling_D1_.clear();
         scaling_D2_.clear();
         last_iterations_ = 0;
         last_converged_ = false;
+        operator_applications_ = 0;
         if (fallback_)
             fallback_->initialize(n);
         return true;
@@ -115,6 +117,13 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     }
     unsigned int fallbackCount() const {
         return fallbacks_;
+    }
+
+    // Number of J*v operator applications performed since the last
+    // initialize().  Non-zero proves the Krylov path actually ran instead of
+    // the dense delegation.
+    unsigned long long operatorApplications() const {
+        return operator_applications_;
     }
 
     // Dense fallback: a matrix-free solver can still be installed for an
@@ -237,6 +246,7 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         for (unsigned int i = 0; i < n_; ++i)
             if (!std::isfinite(y[i]))
                 return false;
+        ++operator_applications_;
         return true;
     }
 
@@ -533,6 +543,7 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     unsigned int last_iterations_ = 0;
     bool last_converged_ = false;
     unsigned int fallbacks_ = 0;
+    mutable unsigned long long operator_applications_ = 0;
 };
 
 template <typename Scalar> class GmresLinearSolver : public KrylovSolverBase<Scalar> {

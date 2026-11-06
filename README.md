@@ -310,13 +310,16 @@ The tests are split into three ctest tiers below `tests/`:
 - `tests/unit/` — one focused executable per component (`IntegratorConfig`,
   `ReplayTape`, `NordsieckState`, `StepController`, `NewtonSolver`,
   `SensitivityEngine`, `AdjointEngine`, `DenseLUSolver`/CSC reference path,
-  `SparsityPattern`, `CscMatrix`, CppAD RHS sparsity/`J·v`, and the Krylov
-  solver). These are fast, dependency-light contract tests.
+  `SparsityPattern`, `CscMatrix`, CppAD RHS sparsity/`J·v`, `UserODERHS`
+  analytic sparsity/`J·v`, and the Krylov solver). These are fast,
+  dependency-light contract tests.
 - `tests/component/` — cross-component integration: native CSC assembly and
   the CppAD sparse Jacobian path (`native_sparse`), matrix-free Newton–Krylov
-  against the direct HIRES trajectory (`matrix_free_newton`), plus symbolic
-  reuse with UMFPACK/KLU (`suitesparse_sparse`, registered only when
-  SuiteSparse is available).
+  against the direct HIRES trajectory (`matrix_free_newton`), the same
+  matrix-free path through the pure `UserODERHS` backend
+  (`matrix_free_pure`, both configurations), plus symbolic reuse with
+  UMFPACK/KLU (`suitesparse_sparse`, registered only when SuiteSparse is
+  available).
 - `tests/system/` — the mathematical benchmark suite: linear problems,
   Robertson, Van der Pol, Brusselator, HIRES, Oregonator, Prothero–Robinson,
   damped pendulum, E5, large sparse/network systems, forward/reverse/
@@ -394,13 +397,34 @@ Jacobian–vector product (`AbstractRHS::jacobianVectorProduct`, one CppAD
 `Forward(1)` sweep for AD tapes) and never sees a stored dense `J`. The scaled
 CSC `P` is still assembled for the Newton scaling and the preconditioner
 (`Jacobi` or the exact `Direct` solve). The path requires an RHS sparsity
-pattern; without one the historical dense solve is used.
+pattern; without one the historical dense solve is used and a single warning
+is logged instead of silently downgrading. `operatorApplications()` reports
+how many `J·v` products ran, so a test can prove the Krylov path was taken.
+
+Without CppAD, supply the same information on `UserODERHS` explicitly:
+
+```cpp
+#include <yabi/user_ode_rhs.hpp>
+
+yabi::UserODERHS<double> rhs(n, f, jac);
+yabi::SparsityPattern pattern;          // column-oriented df/dy structure
+pattern.rows = pattern.cols = n;
+pattern.column_rows = {{0, 1}, {0, 1}}; // per-column row indices
+rhs.setSparsityPattern(pattern);        // validated; throws if malformed
+rhs.setJacobianVectorProduct([](const double *y, const double *v, double *Jv) {
+    // analytic J(y)*v; J is never formed
+});
+```
+Both hooks are additive: without them `UserODERHS` keeps the historical dense
+behaviour. This activates the same CSC sparse path used by
+`CppADRHS`, in `YABI_USE_CPPAD=OFF` builds too.
 
 Sensitivities are deliberately unchanged: forward/reverse/simultaneous
 sensitivity still uses the explicit `J`/`H` blocks and is not matrix-free.
 `tests/component/matrix_free_newton.cpp` verifies all three Krylov methods on
 HIRES against the direct trajectory and checks that the sensitivity result is
-unchanged.
+unchanged; `tests/component/matrix_free_pure.cpp` does the same through
+`UserODERHS` and runs in both build configurations.
 
 ### Pure/manual ODE interface (no CppAD dependency in user code)
 Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `tests/system/manual_sensitivity_pure.cpp`.
@@ -425,7 +449,7 @@ ctest --test-dir build -L system             # mathematical benchmarks
 - Use the user-ODE interface; see `include/yabi/user_ode.hpp` for the API and `examples/manual_sensitivity_pure.cpp` for a complete example.
 
 ### 3) Pluggable linear solvers (dense + sparse)
-**Interface:** `include/yabi/linear_solver.hpp` defines the abstract solver used by the corrector/linear solves. Implement `solve(A, b, x)` (and setup/factorization as needed).
+**Interface:** `include/yabi/linear_solver.hpp` defines the abstract solver used by the corrector/linear solves. Implement `initialize()`, `factorize()` and `solve()`; a solver that consumes native CSC storage additionally overrides `supportsCsc()`, `factorizeCsc()` and `solveCsc()`.
 
 **Built-in:**
 - `DenseLUSolver<double>` (default, LAPACK `dgetrf`/`dgetrs`)
@@ -441,8 +465,21 @@ ctest --test-dir build -L system             # mathematical benchmarks
 
 class MySparseSolver : public yabi::LinearSolver<double> {
 public:
-  bool factorize(const yabi::SparseMatrix<double>& A) override { /* build symbolic/numeric */ return true; }
-  bool solve(const yabi::SparseMatrix<double>& A, const double* b, double* x) override { /* solve */ return true; }
+  bool initialize(unsigned int n) override { /* size workspace */ return true; }
+
+  // Dense interface: P is column-major n x n.
+  bool factorize(double *P, int *ipiv, long *scalingD1, long *scalingD2,
+                 unsigned int n) override { /* build symbolic/numeric */ return true; }
+  int solve(double *P, int *ipiv, long *scalingD1, long *scalingD2,
+            double *b, unsigned int n, unsigned int nrhs) override { /* solve */ return 0; }
+
+  // Optional native CSC path (T31): return true to receive CscMatrix<double>.
+  bool supportsCsc() const override { return true; }
+  bool factorizeCsc(const yabi::CscMatrix<double>& P, int *ipiv,
+                    long *scalingD1, long *scalingD2, unsigned int n) override { return true; }
+  int solveCsc(const yabi::CscMatrix<double>& P, int *ipiv,
+               long *scalingD1, long *scalingD2, double *b,
+               unsigned int n, unsigned int nrhs) override { return 0; }
 };
 
 yabi::BDFIntegrator<double> integrator(rhs);

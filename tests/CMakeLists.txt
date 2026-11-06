@@ -43,6 +43,11 @@ if(YABI_USE_CPPAD)
         "component;matrixfree")
 endif()
 
+# Pure (CppAD-free) path: UserODERHS supplies the analytic sparsity pattern and
+# J*v, so the same matrix-free Newton solve must run in both configurations.
+yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/matrix_free_pure.cpp"
+    "component;matrixfree;pure")
+
 # Native CSC + symbolic reuse requires both SuiteSparse solvers.  Registered
 # only when they are present, so the default build stays dependency-light.
 if(YABI_USE_CPPAD AND UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY AND KLU_INCLUDE_DIR AND KLU_LIBRARY)

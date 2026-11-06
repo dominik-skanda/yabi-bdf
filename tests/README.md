@@ -58,6 +58,9 @@ Current coverage:
 - `test_csc_matrix` — CSC construction, diagonal insertion, scaling, validation
 - `test_cppad_rhs_sparsity` — CppAD sparse Jacobian detection, values, and
   `J·v` (CppAD builds only)
+- `test_user_ode_rhs` — pure/analytic sparsity pattern validation, Jacobian
+  extraction order, analytic/default `J·v`, clone preservation, invalid input
+  rejection (both configurations)
 - `test_krylov_solver` — GMRES/FGMRES/BiCGSTAB, preconditioners, direct
   fallback, and dense delegation (both configurations)
 
@@ -70,8 +73,13 @@ other unit tests run in both configurations.
   asserts bit-identical results against the dense path.
 - `matrix_free_newton.cpp` — HIRES state solve through GMRES/FGMRES/BiCGSTAB and
   the `J·v` operator, with Jacobi and exact-CSC preconditioners; asserts the
-  direct trajectory is reproduced with no CSC fallback and that forward
-  sensitivities still follow the explicit `J`/`H` path.
+  direct trajectory is reproduced with no CSC fallback, that
+  `operatorApplications() > 0`, and that forward sensitivities still follow the
+  explicit `J`/`H` path (CppAD builds).
+- `matrix_free_pure.cpp` — the same matrix-free solve driven by `UserODERHS`
+  with an analytic pattern and `J·v`; runs in both configurations, asserts a
+  `< 1e-9` match to the dense trajectory, a non-zero operator count, and a
+  one-time diagnostic (not a silent downgrade) when the pattern is missing.
 - `suitesparse_sparse.cpp` — UMFPACK/KLU numeric factorization with symbolic
   reuse; registered only when both libraries are found.
 

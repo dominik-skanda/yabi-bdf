@@ -34,14 +34,14 @@ Tests are organised in three tiers below `tests/` and selected with ctest labels
 
 | tier | label | contents |
 |---|---|---|
-| unit | `unit` | isolated component contracts (config, replay tape, Nordsieck state, step controller, Newton, sensitivity, adjoint, dense/CSC solver, sparsity, CscMatrix, CppAD RHS sparsity, Krylov solver) |
-| component | `component` | cross-component integration (`native_sparse`, `matrix_free_newton`, plus `suitesparse_sparse` when SuiteSparse is available) |
+| unit | `unit` | isolated component contracts (config, replay tape, Nordsieck state, step controller, Newton, sensitivity, adjoint, dense/CSC solver, sparsity, CscMatrix, CppAD RHS sparsity, `UserODERHS` sparsity/`J·v`, Krylov solver) |
+| component | `component` | cross-component integration (`native_sparse`, `matrix_free_newton`, `matrix_free_pure`, plus `suitesparse_sparse` when SuiteSparse is available) |
 | system | `system` | mathematical benchmarks and regressions (`tests/system/`) |
 
-- `ctest --test-dir build` (CppAD): **58/58 pass** — 12 unit, 3 component (including
+- `ctest --test-dir build` (CppAD): **60/60 pass** — 13 unit, 4 component (including
   `suitesparse_sparse` when SuiteSparse is available), 40 system, 3 example.
-- `ctest --test-dir build-pure` (no CppAD): **21/21 pass** — 11 unit, 7 pure system,
-  3 example.
+- `ctest --test-dir build-pure` (no CppAD): **23/23 pass** — 12 unit, 1 component,
+  7 pure system, 3 example.
 
 ## Key numeric anchors (representative outputs, verbatim)
 

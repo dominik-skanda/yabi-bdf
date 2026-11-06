@@ -74,6 +74,7 @@ struct RunResult {
     std::vector<double> sensitivity;
     unsigned int jacobian_evaluations = 0;
     unsigned int fallbacks = 0;
+    unsigned long long operator_applications = 0;
     bool last_converged = true;
 };
 
@@ -138,6 +139,7 @@ RunResult integrate(Mode mode, yabi::KrylovPreconditioner preconditioner, bool s
     result.jacobian_evaluations = integrator.getJacobianEvaluations();
     if (krylov) {
         result.fallbacks = krylov->fallbackCount();
+        result.operator_applications = krylov->operatorApplications();
         result.last_converged = krylov->lastConverged();
     }
     result.ok = true;
@@ -163,6 +165,8 @@ void checkStateSolve(Mode mode, const char *name, yabi::KrylovPreconditioner pre
     const double diff = maxDifference(result.y, dense.y);
     check(diff < 1e-9, std::string(name) + ": state matches the direct solver (diff " +
                            std::to_string(diff) + ")");
+    check(result.operator_applications > 0,
+          std::string(name) + ": the Krylov operator was applied");
     check(result.fallbacks == 0, std::string(name) + ": no direct CSC fallback");
     check(result.last_converged, std::string(name) + ": last Krylov solve converged");
     check(result.jacobian_evaluations == dense.jacobian_evaluations,
