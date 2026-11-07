@@ -378,6 +378,55 @@ against the exact solution of `y' = y²`, and
 `tests/system/33_higher_order_sensitivity.cpp` covers a coupled nonlinear
 system, a non-autonomous system, and a parameter-dependent system.
 
+### Choosing a sensitivity method
+
+YABI exposes **four pure sensitivity methods**; no automatic switching or
+method mixing happens — the user selects exactly one. They split along two
+axes: *forward vs reverse* (what the seed/weight means) and *discrete vs
+continuous* (how the sensitivity is propagated).
+
+| Method | Direction | Propagation | Stable on long/stiff? |
+|---|---|---|---|
+| `forward(q)` | forward (state) | discrete IND (replay of frozen step Jacobians) | order 1 yes; order ≥ 3 diverges |
+| `reverse(q)` | reverse (adjoint) | discrete IND | order 1 yes; order ≥ 3 diverges |
+| `continuousAdjoint` / `secondOrderAdjoint` | reverse | continuous ODE `λ' = -Jᵀλ` (re-integrated) | **yes, all orders** |
+| simultaneous seeds / `secondOrderForward` | forward | continuous ODE `S' = J·S` (+ `H·S·S`) | **yes, all orders** |
+
+The discrete (IND) methods are *exact for the discretization* and are the
+fastest and most accurate choice on short intervals — but they replay frozen
+BDF linearizations, so at order 3–6 over long, stiff intervals the replay is
+A-stability-bound and can diverge to huge finite values (T24). The continuous
+methods reformulate the sensitivity as another ODE and hand it to the same
+stable BDF, inheriting its stability for free; they cost a second (or third)
+full integration.
+
+**Decision table**
+
+| Your situation | Use |
+|---|---|
+| General, short interval, need accuracy + speed | `forward(1)` / `reverse(1)` (IND) |
+| Long/stiff interval, forward sensitivity | simultaneous seeds (1st) or `secondOrderForward` (2nd) |
+| Long/stiff interval, reverse sensitivity | `continuousAdjoint` (1st) or `secondOrderAdjoint` (2nd) |
+| Higher-order (≥ 3) derivative on a short interval | `forward(q)` / `reverse(q)` (full-Taylor replay) |
+
+**Backend-agnostic contract** — every method works identically under CppAD
+(`YABI_USE_CPPAD=ON`) and pure mode (`YABI_USE_CPPAD=OFF`):
+
+- 1st-order continuous/simultaneous: CppAD provides `J` (and `∂f/∂p`) via AD;
+  pure `UserODERHS` supplies an analytic Jacobian (plus
+  `setTimeDerivative`/`setParameterDerivative` for non-autonomous RHS).
+- 2nd-order continuous/simultaneous: CppAD provides `H·v` via a `Reverse(2)`
+  or `Forward(2)` sweep; pure mode supplies the analytic
+  `setHessianVectorProduct(hv)` (adjoint) or `setSecondOrderDirectional(sod)`
+  (forward) hooks.
+- No finite differences are used anywhere. The only asymmetry is that
+  `forward(order ≥ 2)` / `reverse(order ≥ 2)` (the *discrete* higher-order
+  replay) require the CppAD full-Taylor backend and fail loudly in pure mode.
+
+**Rejected alternatives** (recorded so they are not re-introduced): no
+auto-patching of IND (a diverged replay is reported, not silently corrected),
+no on-the-fly conservative-mode switching, and no finite-difference fallback.
+
 ## Tests
 
 The tests are split into three ctest tiers below `tests/`:
