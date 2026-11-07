@@ -47,6 +47,7 @@
     #include <yabi/detail/replay_tape.hpp>
     #include <yabi/detail/sensitivity_engine.hpp>
     #include <yabi/detail/step_controller.hpp>
+    #include <yabi/jacobian_backend.hpp>
     #include <yabi/linear_algebra.hpp>
 
 namespace yabi {
@@ -157,8 +158,14 @@ template <class Scalar> class BDFIntegrator {
     // to keep the dense assembly path with that solver.
     void setLinearSolver(LinearSolver<Scalar> *solver) {
         linearSolver.reset(solver);
-        if (linearSolver) {
+        if (linearSolver)
             linearSolver->initialize(numOfSpecies);
+        // Auto: reflect the solver's preferences by only ever *enabling* a
+        // toggle (never disabling) — the historical behaviour, which does not
+        // override a manual setSparseAssembly/setMatrixFreeAssembly toggle.  An
+        // explicit JacobianBackend keeps its toggles untouched; the solve
+        // validates the choice.
+        if (newtonSolver.jacobianBackend == JacobianBackend::Auto) {
             if (linearSolver->prefersSparseFactorization())
                 newtonSolver.sparseAssembly = true;
             if (linearSolver->supportsMatrixFree())
@@ -166,6 +173,35 @@ template <class Scalar> class BDFIntegrator {
         }
     }
     LinearSolver<Scalar> *getLinearSolver() const { return linearSolver.get(); }
+
+    // Explicitly select how the Jacobian is formed for the plain state Newton
+    // solve (T33).  Dense/Sparse/MatrixFree force that path and fail loudly when
+    // the RHS + installed solver cannot satisfy it; Auto (the default) keeps the
+    // historical capability-driven selection.  The sparse/matrix-free paths cover
+    // the plain state solve only — sensitivity solves always use the dense J/H
+    // path (documented, no silent loss).
+    void setJacobianBackend(JacobianBackend backend) {
+        newtonSolver.jacobianBackend = backend;
+        switch (backend) {
+        case JacobianBackend::Dense:
+            newtonSolver.sparseAssembly = false;
+            newtonSolver.matrixFreeAssembly = false;
+            break;
+        case JacobianBackend::Sparse:
+            newtonSolver.sparseAssembly = true;
+            newtonSolver.matrixFreeAssembly = false;
+            break;
+        case JacobianBackend::MatrixFree:
+            newtonSolver.sparseAssembly = false;
+            newtonSolver.matrixFreeAssembly = true;
+            break;
+        case JacobianBackend::Auto:
+        default:
+            applyAutoBackend();
+            break;
+        }
+    }
+    JacobianBackend getJacobianBackend() const { return newtonSolver.jacobianBackend; }
 
     // Native sparse Newton assembly (T31): detect the Jacobian pattern once,
     // assemble J/P in CSC and reuse the solver's symbolic factorization while
@@ -233,6 +269,13 @@ template <class Scalar> class BDFIntegrator {
                                     Scalar **absolut_error_derivatives_,
                                     unsigned int numOfDerivatives_);
     bool freeSimultaneousDerivatives();
+
+    // Re-derive the sparse/matrix-free assembly toggles from the installed
+    // solver's capabilities (the historical Auto behaviour; T33).
+    void applyAutoBackend() {
+        newtonSolver.sparseAssembly = linearSolver && linearSolver->prefersSparseFactorization();
+        newtonSolver.matrixFreeAssembly = linearSolver && linearSolver->supportsMatrixFree();
+    }
     std::unique_ptr<AbstractRHS<Scalar>> RHS;
 
     // Pluggable linear solver (default DenseLUSolver). Mathematically identical

@@ -20,6 +20,7 @@
 #include <yabi/detail/nordsieck_state.hpp>
 #include <yabi/detail/replay_tape.hpp>
 #include <yabi/detail/step_controller.hpp>
+#include <yabi/jacobian_backend.hpp>
 #include <yabi/linear_solver.hpp>
 #include <yabi/log.hpp>
 #include <yabi/sparsity_pattern.hpp>
@@ -156,10 +157,57 @@ template <typename Scalar> class NewtonSolver {
         // The matrix-free path still assembles the sparse pattern, but only to
         // build/scale the preconditioner; J acts on vectors through the
         // MatrixFreeOperator, never as a stored dense matrix.
-        const bool matrixFreeRequested = matrixFreePathAvailable();
+        //
+        // T33: an explicit JacobianBackend overrides the capability-driven
+        // selection.  A forced Sparse/MatrixFree backend that the RHS + solver
+        // cannot satisfy fails loudly instead of silently downgrading to dense.
+        bool matrixFreeRequested;
+        bool sparseRequested;
+        switch (jacobianBackend) {
+        case JacobianBackend::Dense:
+            matrixFreeRequested = false;
+            sparseRequested = false;
+            break;
+        case JacobianBackend::Sparse:
+            if (!sparsePathAvailable() || !prepareSparsePattern()) {
+                YABI_LOG_ERROR("JacobianBackend::Sparse requested but unavailable: need a plain "
+                               "state solve, a CSC-capable linear solver, and a RHS Jacobian "
+                               "sparsity pattern.");
+                internalError = true;
+                return false;
+            }
+            matrixFreeRequested = false;
+            sparseRequested = true;
+            break;
+        case JacobianBackend::MatrixFree: {
+            if (!matrixFreePathAvailable()) {
+                YABI_LOG_ERROR("JacobianBackend::MatrixFree requested but unavailable: need a "
+                               "plain state solve and a matrix-free (Krylov) linear solver.");
+                internalError = true;
+                return false;
+            }
+            const bool withoutAssembly =
+                linearSolver && !linearSolver->requiresAssembledMatrix();
+            if (!withoutAssembly && !prepareSparsePattern()) {
+                YABI_LOG_ERROR("JacobianBackend::MatrixFree requested but unavailable: the "
+                               "installed solver needs an assembled preconditioner matrix, but "
+                               "the RHS exposes no Jacobian sparsity pattern.");
+                internalError = true;
+                return false;
+            }
+            matrixFreeRequested = true;
+            sparseRequested = false;
+            break;
+        }
+        case JacobianBackend::Auto:
+        default:
+            matrixFreeRequested = matrixFreePathAvailable();
+            sparseRequested = !matrixFreeRequested && sparsePathAvailable();
+            break;
+        }
+
         const bool matrixFreeWithoutAssembly =
             matrixFreeRequested && linearSolver && !linearSolver->requiresAssembledMatrix();
-        const bool sparseRequested = !matrixFreeRequested && sparsePathAvailable();
         const bool needSparsePattern =
             !matrixFreeWithoutAssembly && (matrixFreeRequested || sparseRequested);
         const bool sparsePatternReadyForSolve = !needSparsePattern || prepareSparsePattern();
@@ -1749,6 +1797,11 @@ template <typename Scalar> class NewtonSolver {
     SparsityPattern sparsePattern;
     CscMatrix<Scalar> J_csc;
     CscMatrix<Scalar> P_csc;
+
+    // Explicit Jacobian-backend selection (T33).  Auto reproduces the historical
+    // capability-driven behaviour; Dense/Sparse/MatrixFree force that path and
+    // fail loudly when the RHS + solver cannot satisfy it.
+    JacobianBackend jacobianBackend = JacobianBackend::Auto;
 
     // Matrix-free state (T32).  The operator is owned here and borrowed by the
     // installed Krylov solver; matrixFreeBase is the J evaluation point.

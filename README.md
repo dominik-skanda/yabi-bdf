@@ -612,6 +612,37 @@ unchanged; `tests/component/matrix_free_pure.cpp` does the same through
 `UserODERHS` and runs in both build configurations;
 `tests/component/matrix_free_jfree.cpp` exercises the no-pattern J-free path.
 
+### Selectable Jacobian backends (T33)
+How the Newton-matrix Jacobian is formed for the *plain state* solve is chosen
+explicitly through `setJacobianBackend`:
+
+```cpp
+#include <yabi/jacobian_backend.hpp>
+
+integrator.setJacobianBackend(yabi::JacobianBackend::Sparse);  // or Dense / MatrixFree / Auto
+```
+
+- `Dense` — `J`/`P` via `Forward(1)` directional columns, dense LAPACK. Always
+  available; the default solver path.
+- `Sparse` — `J`/`P` in CSC via `sparseJacobian()`, factorized by a CSC-capable
+  solver. Requires a RHS Jacobian sparsity pattern + `supportsCsc()` solver.
+- `MatrixFree` — `J·v` via `jacobianVectorProduct()`, solved by a Krylov solver
+  (sparse or J-free preconditioner). Requires a `supportsMatrixFree()` solver,
+  plus a pattern if its preconditioner needs an assembled matrix.
+- `Auto` (default) — the historical capability-driven selection: dense, unless
+  you install a UMFPACK/KLU solver (→ sparse) or a Krylov solver (→ matrix-free).
+
+The Jacobian *source* is orthogonal and is chosen by which `AbstractRHS` you
+construct: `CppADRHS` (AD) or `UserODERHS` (analytic callbacks) both feed every
+representation above, so "user-analytic" is not a separate backend value.
+
+An explicit `Dense`/`Sparse`/`MatrixFree` choice is honoured strictly: if the
+RHS + installed solver cannot satisfy it, the solve **fails loudly** rather than
+silently downgrading to dense. The sparse/matrix-free paths cover the plain
+state Newton solve only — sensitivity solves (simultaneous seeds, or taped
+forward/reverse replay) always use the explicit dense `J`/`H` path, so nothing
+is silently lost. `getJacobianBackend()` reports the selection.
+
 ### Pure/manual ODE interface (no CppAD dependency in user code)
 Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `tests/system/manual_sensitivity_pure.cpp`.
 
