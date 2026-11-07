@@ -38,14 +38,20 @@ Tests are organised in three tiers below `tests/` and selected with ctest labels
 | component | `component` | cross-component integration (`native_sparse`, `matrix_free_newton`, `matrix_free_pure`, `matrix_free_jfree`, plus `suitesparse_sparse` when SuiteSparse is available) |
 | system | `system` | mathematical benchmarks and regressions (`tests/system/`) |
 
-- `ctest --test-dir build` (CppAD): **63/63 pass** — 15 unit, 5 component (including
-  `suitesparse_sparse` when SuiteSparse is available), 40 system, 3 example.
+- `ctest --test-dir build` (CppAD): **64/64 pass** — 15 unit, 5 component (including
+  `suitesparse_sparse` when SuiteSparse is available), 41 system, 3 example.
 - `ctest --test-dir build-pure` (no CppAD): **26/26 pass** — 14 unit, 2 component,
   7 pure system, 3 example.
 
 T32c (pluggable/J-free preconditioners and forcing) and T32d (batch/sparse/matrix-free sensitivity interfaces)
 are additive: every pre-existing numeric anchor below is unchanged, `yabi_basic` remains
 `6.53219478508049e-10`, and the sensitivity replay values are identical.
+
+T29 (RAII memory management) and the arbitrary-order (3+) forward/reverse sensitivity work are likewise
+behaviour-preserving for the *nominal* trajectory: every anchor below except `28_second_order_sensitivity`
+is bit-identical after both. `28` itself was extended from second order to orders 1–4 and its `forward(2)`
+now runs the full-Taylor replay, so its printed `forward(2)` relative error moved from `5.84e-09` to
+`9.95e-09` (the value `8` is unchanged, still ≈1e-9).
 
 ## Key numeric anchors (representative outputs, verbatim)
 
@@ -78,11 +84,13 @@ t=5 => y=(1.001753339,571.3421806,23962.69912) OK
 t=10 => y=(1.000670524,1492.35853,10713.98688) OK
 ```
 
-`28_second_order_sensitivity`:
+`28_second_order_sensitivity` (orders 1–4):
 ```
 forward(1) = 4 (exact 4) rel=1.55578e-09
-forward(2) = 8 (exact 8) rel=5.84036e-09
-reverse(2) = [order1 4, order2 8] rel=(1.55578e-09,9.95208e-09)
+forward(2) = 8 (exact 8) rel=9.95208e-09
+forward(3) = 24 (exact 24) rel=4.2256e-08
+forward(4) = 96 (exact 96) rel=1.32408e-07
+reverse(4) = [order1 4 order2 8 order3 24 order4 96]
 ```
 
 `31_dense_output` (interior points of the last step):
