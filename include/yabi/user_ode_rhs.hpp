@@ -158,6 +158,40 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    // Batched J*V.  With the analytic hook, one hook call per direction; without
+    // it, evaluate the analytic Jacobian once and apply it to every column.
+    bool jacobianMatrixProduct(const std::vector<Scalar> &x,
+                               const std::vector<Scalar> &directions, unsigned int columns,
+                               std::vector<Scalar> &result) const override {
+        if (x.size() != n_)
+            return false;
+        if (columns == 0) {
+            result.clear();
+            return directions.empty();
+        }
+        if (directions.size() != n_ * (std::size_t)columns)
+            return false;
+
+        result.assign(n_ * (std::size_t)columns, Scalar(0));
+        if (jv_) {
+            for (unsigned int c = 0; c < columns; ++c)
+                jv_(x.data(), directions.data() + (std::size_t)c * n_,
+                    result.data() + (std::size_t)c * n_);
+            return true;
+        }
+
+        std::vector<Scalar> J(n_ * n_);
+        jac_(x.data(), J.data());
+        for (unsigned int c = 0; c < columns; ++c)
+            for (std::size_t i = 0; i < n_; ++i) {
+                Scalar sum = Scalar(0);
+                for (std::size_t j = 0; j < n_; ++j)
+                    sum += J[i + n_ * j] * directions[(std::size_t)c * n_ + j];
+                result[(std::size_t)c * n_ + i] = sum;
+            }
+        return true;
+    }
+
   private:
     std::size_t n_;
     ODE f_;

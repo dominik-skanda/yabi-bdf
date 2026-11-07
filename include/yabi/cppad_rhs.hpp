@@ -138,6 +138,51 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    // Batched product with one CppAD multi-direction forward sweep.  For a
+    // single column the historical interleaved Forward(1) path is used so the
+    // integrator's single-direction usage is unchanged.
+    bool jacobianMatrixProduct(const std::vector<Scalar> &x,
+                               const std::vector<Scalar> &directions, unsigned int columns,
+                               std::vector<Scalar> &result) const override {
+        const std::size_t n = fun_->Domain();
+        const std::size_t m = fun_->Range();
+        if (x.size() != n)
+            return false;
+        if (columns == 0) {
+            result.clear();
+            return directions.empty();
+        }
+        if (directions.size() != n * (std::size_t)columns)
+            return false;
+
+        if (columns == 1) {
+            std::vector<Scalar> direction(directions.begin(), directions.end());
+            return jacobianVectorProduct(x, direction, result);
+        }
+
+        CppAD::vector<Scalar> xv(n);
+        for (std::size_t i = 0; i < n; ++i)
+            xv[i] = x[i];
+        fun_->Forward(0, xv);
+
+        // Layout: xq[columns*j + c] is direction c of variable j.
+        CppAD::vector<Scalar> xq(n * (std::size_t)columns);
+        for (std::size_t j = 0; j < n; ++j)
+            for (unsigned int c = 0; c < columns; ++c)
+                xq[(std::size_t)columns * j + c] = directions[(std::size_t)c * n + j];
+
+        CppAD::vector<Scalar> yq = fun_->Forward(1, (std::size_t)columns, xq);
+        if (yq.size() != m * (std::size_t)columns)
+            return false;
+
+        // Layout: yq[columns*i + c] is component i of direction c.
+        result.assign(m * (std::size_t)columns, Scalar(0));
+        for (std::size_t i = 0; i < m; ++i)
+            for (unsigned int c = 0; c < columns; ++c)
+                result[(std::size_t)c * m + i] = yq[(std::size_t)columns * i + c];
+        return true;
+    }
+
     bool sparseJacobian(const std::vector<Scalar> &x, const SparsityPattern &pattern,
                         std::vector<Scalar> &values) const override {
         if (!sparse_ready_ || sparse_pattern_ != pattern) {

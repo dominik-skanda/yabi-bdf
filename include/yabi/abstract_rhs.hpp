@@ -64,6 +64,42 @@ template <typename Scalar> class AbstractRHS {
         result = Forward(1, v);
         return result.size() == Range();
     }
+
+    // Batched Jacobian-matrix product J(x)*V.  `directions` and `result` are
+    // column-major Domain() x columns and Range() x columns respectively, so
+    // they match the dense P/J layout already used by the integrator.  The
+    // default is exact and calls jacobianVectorProduct() once per column; a
+    // sparse/block/matrix-free backend may override it with a batched product.
+    // This is the extension point for future sparse/matrix-free sensitivity
+    // linearizations; the replay engines still use explicit J/H today.
+    virtual bool jacobianMatrixProduct(const std::vector<Scalar> &x,
+                                       const std::vector<Scalar> &directions,
+                                       unsigned int columns,
+                                       std::vector<Scalar> &result) const {
+        const std::size_t domain = Domain();
+        const std::size_t range = Range();
+        if (x.size() != domain)
+            return false;
+        if (columns == 0) {
+            result.clear();
+            return directions.empty();
+        }
+        if (directions.size() != domain * (std::size_t)columns)
+            return false;
+
+        result.assign(range * (std::size_t)columns, Scalar(0));
+        std::vector<Scalar> direction(domain);
+        std::vector<Scalar> product;
+        for (unsigned int c = 0; c < columns; ++c) {
+            for (std::size_t i = 0; i < domain; ++i)
+                direction[i] = directions[(std::size_t)c * domain + i];
+            if (!jacobianVectorProduct(x, direction, product) || product.size() != range)
+                return false;
+            for (std::size_t i = 0; i < range; ++i)
+                result[(std::size_t)c * range + i] = product[i];
+        }
+        return true;
+    }
 };
 
 } // namespace yabi

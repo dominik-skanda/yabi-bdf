@@ -207,11 +207,87 @@ void testJacobianVectorProduct() {
                      "jacobianVectorProduct rejects a wrong-size direction");
 }
 
+// Batch J*V uses one multi-direction CppAD forward sweep; it must match the
+// explicit per-column Jacobian product, including time/parameter domain
+// components.
+void testJacobianMatrixProduct() {
+    const std::size_t n = 12;
+    CppAD::ADFun<double> fun = makeParameterizedTape(n);
+    yabi::CppADRHS<double> rhs(fun);
+
+    std::vector<double> x(n + 2);
+    for (std::size_t i = 0; i < n; ++i)
+        x[i] = 1.0 + 0.01 * (double)i;
+    x[n] = 3.0;     // time
+    x[n + 1] = 2.0; // parameter
+
+    const unsigned int columns = 3;
+    const std::size_t domain = n + 2;
+    std::vector<double> directions(domain * (std::size_t)columns, 0.0);
+    // Column 0: state-only.  Columns 1/2 also carry time/parameter components
+    // so the full-domain product is exercised, not only the state block.
+    for (std::size_t i = 0; i < n; ++i) {
+        directions[i] = 0.5 - 0.03 * (double)i;
+        directions[domain * 1 + i] = 1.0 + 0.02 * (double)i;
+        directions[domain * 2 + i] = -0.75 + 0.01 * (double)i;
+    }
+    directions[domain * 1 + n] = 1.0;
+    directions[domain * 1 + n + 1] = -2.0;
+
+    std::vector<double> batch;
+    yabi_test::check(rhs.jacobianMatrixProduct(x, directions, columns, batch),
+                     "jacobianMatrixProduct succeeds");
+    yabi_test::check(batch.size() == n * columns, "batch product has n*columns entries");
+
+    // Explicit reference: assemble the full-domain Jacobian column by column
+    // with Forward(1), including the time/parameter columns.
+    rhs.Forward(0, x);
+    std::vector<std::vector<double>> J(n, std::vector<double>(domain, 0.0));
+    std::vector<double> dx(domain, 0.0);
+    for (std::size_t j = 0; j < domain; ++j) {
+        dx[j] = 1.0;
+        std::vector<double> df = rhs.Forward(1, dx);
+        dx[j] = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+            J[i][j] = df[i];
+    }
+
+    double max_diff = 0.0;
+    for (unsigned int c = 0; c < columns; ++c)
+        for (std::size_t i = 0; i < n; ++i) {
+            double expected = 0.0;
+            for (std::size_t j = 0; j < domain; ++j)
+                expected += J[i][j] * directions[(std::size_t)c * domain + j];
+            max_diff = std::max(max_diff,
+                                std::fabs(batch[(std::size_t)c * n + i] - expected));
+        }
+    yabi_test::check(max_diff < 1e-14, "batch J*V matches the explicit Jacobian product");
+
+    // One column follows the single-direction contract and stays exact.
+    std::vector<double> one(directions.begin(), directions.begin() + (n + 2));
+    std::vector<double> single;
+    yabi_test::check(rhs.jacobianMatrixProduct(x, one, 1, single),
+                     "single-column batch succeeds");
+    double single_diff = 0.0;
+    for (std::size_t i = 0; i < n; ++i)
+        single_diff = std::max(single_diff, std::fabs(single[i] - batch[i]));
+    yabi_test::check(single_diff < 1e-14, "single-column batch matches the first column");
+
+    // Validation.
+    std::vector<double> bad(n, 0.0);
+    yabi_test::check(!rhs.jacobianMatrixProduct(x, bad, columns, batch),
+                     "batch rejects a wrong-size direction block");
+    std::vector<double> bad_x(n, 0.0);
+    yabi_test::check(!rhs.jacobianMatrixProduct(bad_x, directions, columns, batch),
+                     "batch rejects a wrong-size point");
+}
+
 } // namespace
 
 int main() {
     testTridiagonalDetection();
     testStateBlockOnly();
     testJacobianVectorProduct();
+    testJacobianMatrixProduct();
     return yabi_test::finish("CppADRHS sparsity unit tests");
 }
