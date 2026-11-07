@@ -8,6 +8,7 @@
 #ifndef YABI_DETAIL_NORDSIECK_STATE_HPP
 #define YABI_DETAIL_NORDSIECK_STATE_HPP
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -68,8 +69,8 @@ template <typename Scalar> class NordsieckState {
 
     // z_predictor = A_q * z_corrector for the current order q.
     bool calculate_next_predictor(unsigned int numSpecies, unsigned int numDerivatives,
-                                  Scalar **z_corrector_derivatives,
-                                  Scalar **z_predictor_derivatives) {
+                                  std::vector<std::vector<Scalar>> &z_corrector_derivatives,
+                                  std::vector<std::vector<Scalar>> &z_predictor_derivatives) {
         unsigned int z;
 
         static Scalar A1[4] = {1., 0., 1., 1.};
@@ -131,38 +132,38 @@ template <typename Scalar> class NordsieckState {
                 case 1:
                     blasTEMP = 2;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A1, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A1, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 case 2:
                     blasTEMP = 3;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A2, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A2, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 case 3:
                     blasTEMP = 4;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A3, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A3, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 case 4:
                     blasTEMP = 5;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A4, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A4, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 case 5:
                     blasTEMP = 6;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A5, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A5, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 case 6:
                     blasTEMP = 7;
                     linalg::DGEMM_NT_T(numSpecies, blasTEMP, blasTEMP, one,
-                                       z_corrector_derivatives[z], numSpecies, A6, blasTEMP, zero,
-                                       z_predictor_derivatives[z], numSpecies);
+                                       z_corrector_derivatives[z].data(), numSpecies, A6, blasTEMP, zero,
+                                       z_predictor_derivatives[z].data(), numSpecies);
                     break;
                 }
             }
@@ -173,8 +174,9 @@ template <typename Scalar> class NordsieckState {
 
     // z_corrector = z_predictor + corrector * l_i^T.
     bool calculate_next_corrector(unsigned int numSpecies, unsigned int numDerivatives,
-                                  Scalar **corrector_derivatives, Scalar **z_predictor_derivatives,
-                                  Scalar **z_corrector_derivatives) {
+                                  std::vector<std::vector<Scalar>> &corrector_derivatives,
+                                  std::vector<std::vector<Scalar>> &z_predictor_derivatives,
+                                  std::vector<std::vector<Scalar>> &z_corrector_derivatives) {
         unsigned int i, j, z;
 
         for (i = 0; i < numSpecies; i++)
@@ -183,7 +185,7 @@ template <typename Scalar> class NordsieckState {
 
         int blasTEMP = order_corrector + 1;
         Scalar blasTEMP2 = 1.0;
-        linalg::GER(numSpecies, blasTEMP, blasTEMP2, corrector.data(), 1, l_i, 1,
+        linalg::GER(numSpecies, blasTEMP, blasTEMP2, corrector.data(), 1, l_i.data(), 1,
                     z_corrector.data(), numSpecies);
 
         if (numDerivatives > 0)
@@ -194,8 +196,8 @@ template <typename Scalar> class NordsieckState {
                             z_predictor_derivatives[z][numSpecies * j + i];
                 blasTEMP = order_corrector + 1;
                 blasTEMP2 = 1.0;
-                linalg::GER(numSpecies, blasTEMP, blasTEMP2, corrector_derivatives[z], 1, l_i, 1,
-                            z_corrector_derivatives[z], numSpecies);
+                linalg::GER(numSpecies, blasTEMP, blasTEMP2, corrector_derivatives[z].data(), 1, l_i.data(), 1,
+                            z_corrector_derivatives[z].data(), numSpecies);
             }
 
         return true;
@@ -203,8 +205,9 @@ template <typename Scalar> class NordsieckState {
 
     // Evaluate the Nordsieck interpolant at `tEnd` (dense output).
     bool calculate_output_vector(unsigned int numSpecies, unsigned int numDerivatives,
-                                 Scalar **z_corrector_derivatives,
-                                 Scalar **solution_Vector_derivatives, Scalar tEnd) {
+                                 std::vector<std::vector<Scalar>> &z_corrector_derivatives,
+                                 std::vector<std::vector<Scalar>> &solution_Vector_derivatives,
+                                 Scalar tEnd) {
         unsigned int i, j, z;
 
         std::vector<Scalar> temp(order_corrector + 1);
@@ -222,8 +225,8 @@ template <typename Scalar> class NordsieckState {
 
         if (numDerivatives > 0)
             for (z = 0; z < numDerivatives; z++)
-                linalg::GEMV_NT(numSpecies, blasTEMP, one, z_corrector_derivatives[z], numSpecies,
-                                temp.data(), 1, zero, solution_Vector_derivatives[z], 1);
+                linalg::GEMV_NT(numSpecies, blasTEMP, one, z_corrector_derivatives[z].data(), numSpecies,
+                                temp.data(), 1, zero, solution_Vector_derivatives[z].data(), 1);
 
         return true;
     }
@@ -244,10 +247,10 @@ template <typename Scalar> class NordsieckState {
     Scalar step_size_h = 0;
     Scalar step_size_h_old = 0;
     Scalar c_n_old = 1;
-    Scalar l_i[7] = {};
-    Scalar t_i[2] = {};
-    Scalar stepSizeSet_new[6] = {};
-    Scalar stepSizeSet_old[6] = {};
+    std::array<Scalar, 7> l_i{};
+    std::array<Scalar, 2> t_i{};
+    std::array<Scalar, 6> stepSizeSet_new{};
+    std::array<Scalar, 6> stepSizeSet_old{};
 };
 
 } // namespace detail

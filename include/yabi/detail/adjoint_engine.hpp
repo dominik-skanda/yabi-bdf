@@ -8,6 +8,7 @@
 #ifndef YABI_DETAIL_ADJOINT_ENGINE_HPP
 #define YABI_DETAIL_ADJOINT_ENGINE_HPP
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <list>
@@ -64,18 +65,8 @@ template <typename Scalar> class AdjointEngine {
 
     // Release the adjoint result arrays and forget their Taylor order.
     void release() {
-        if (solution_adjoint_species != NULL) {
-            for (unsigned int i = 0; i < numOfSpecies; i++)
-                delete[] solution_adjoint_species[i];
-            delete[] solution_adjoint_species;
-            solution_adjoint_species = NULL;
-        }
-        if (solution_adjoint_parameter != NULL) {
-            for (unsigned int i = 0; i < sizeOfParameter; i++)
-                delete[] solution_adjoint_parameter[i];
-            delete[] solution_adjoint_parameter;
-            solution_adjoint_parameter = NULL;
-        }
+        solution_adjoint_species.clear();
+        solution_adjoint_parameter.clear();
         stored_adjoint_order = 0;
     }
 
@@ -102,20 +93,20 @@ template <typename Scalar> class AdjointEngine {
 
         Scalar step_size_h_adjoint = 0.0;
         Scalar step_size_h_adjoint_old = 0.0;
-        Scalar stepSizeSet_adjoint[6];
-        Scalar l_i_adjoint[7];
+        std::array<Scalar, 6> stepSizeSet_adjoint{};
+        std::array<Scalar, 7> l_i_adjoint{};
         unsigned int order_corrector_adjoint;
 
-        int *scaling_D1_adjoint = NULL;
-        int *scaling_D2_adjoint = NULL;
-        int *ip_adjoint = NULL;
-        Scalar *P_adjoint = NULL;
+        std::vector<int> scaling_D1_adjoint;
+        std::vector<int> scaling_D2_adjoint;
+        std::vector<int> ip_adjoint;
+        std::vector<Scalar> P_adjoint;
 
         if (!direct) {
-            scaling_D1_adjoint = new int[numOfSpecies];
-            scaling_D2_adjoint = new int[numOfSpecies];
-            ip_adjoint = new int[numOfSpecies];
-            P_adjoint = new Scalar[numOfSpecies * numOfSpecies];
+            scaling_D1_adjoint.resize(numOfSpecies);
+            scaling_D2_adjoint.resize(numOfSpecies);
+            ip_adjoint.resize(numOfSpecies);
+            P_adjoint.resize(numOfSpecies * numOfSpecies);
         }
 
         Scalar time_tape_adjoint;
@@ -161,32 +152,21 @@ template <typename Scalar> class AdjointEngine {
         ReplayTape<Scalar> *adjointStepSizePointer;
         ReplayTape<Scalar> *adjointIterationMatrixPointer;
 
-        Scalar **z_adjoint;
-        Scalar **z_adjoint_store;
-        Scalar **correctorVector_adjoint;
-        Scalar **temp_adjoint;
-        Scalar **b_adjoint;
-
-        z_adjoint = new Scalar *[order];
-        z_adjoint_store = new Scalar *[order];
-        correctorVector_adjoint = new Scalar *[order];
-        temp_adjoint = new Scalar *[order];
-        b_adjoint = new Scalar *[order];
-        Scalar *temp = new Scalar[numOfSpecies];
+        std::vector<std::vector<Scalar>> z_adjoint(order,
+                                                    std::vector<Scalar>(numOfSpecies * 7, (Scalar)0.0));
+        std::vector<std::vector<Scalar>> z_adjoint_store(
+            order, std::vector<Scalar>(numOfSpecies * 7, (Scalar)0.0));
+        std::vector<std::vector<Scalar>> correctorVector_adjoint(
+            order, std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+        std::vector<std::vector<Scalar>> temp_adjoint(order,
+                                                      std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+        std::vector<std::vector<Scalar>> b_adjoint(order,
+                                                   std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+        std::vector<Scalar> temp(numOfSpecies);
 
         for (k = 0; k < order; k++) {
-            b_adjoint[k] = new Scalar[numOfSpecies];
-            correctorVector_adjoint[k] = new Scalar[numOfSpecies];
-            temp_adjoint[k] = new Scalar[numOfSpecies];
-            z_adjoint[k] = new Scalar[numOfSpecies * 7];
-            z_adjoint_store[k] = new Scalar[numOfSpecies * 7];
             for (i = 0; i < numOfSpecies; i++) {
-                b_adjoint[k][i] = 0.0;
-                correctorVector_adjoint[k][i] = 0.0;
-                temp_adjoint[k][i] = 0.0;
                 for (j = 0; j < 7; j++) {
-                    z_adjoint[k][numOfSpecies * j + i] = 0.0;
-                    z_adjoint_store[k][numOfSpecies * j + i] = 0.0;
                     if (k == 0 && j <= order_corrector_adjoint) {
                         z_adjoint[k][numOfSpecies * j + i] =
                             seed_weights[i] *
@@ -203,30 +183,8 @@ template <typename Scalar> class AdjointEngine {
         adjointStepSizePointer = NULL;
         adjointIterationMatrixPointer = NULL;
 
-        if (solution_adjoint_species != NULL) {
-            for (i = 0; i < numOfSpecies; i++)
-                delete[] solution_adjoint_species[i];
-            delete[] solution_adjoint_species;
-        }
-        if (solution_adjoint_parameter != NULL) {
-            for (i = 0; i < sizeOfParameter; i++)
-                delete[] solution_adjoint_parameter[i];
-            delete[] solution_adjoint_parameter;
-        }
-
-        solution_adjoint_species = new Scalar *[numOfSpecies];
-        solution_adjoint_parameter = new Scalar *[sizeOfParameter];
-
-        for (i = 0; i < numOfSpecies; i++) {
-            solution_adjoint_species[i] = new Scalar[order];
-            for (k = 0; k < order; k++)
-                solution_adjoint_species[i][k] = 0.0;
-        }
-        for (i = 0; i < sizeOfParameter; i++) {
-            solution_adjoint_parameter[i] = new Scalar[order];
-            for (k = 0; k < order; k++)
-                solution_adjoint_parameter[i][k] = 0.0;
-        }
+        solution_adjoint_species.assign(numOfSpecies, std::vector<Scalar>(order, (Scalar)0.0));
+        solution_adjoint_parameter.assign(sizeOfParameter, std::vector<Scalar>(order, (Scalar)0.0));
 
         std::vector<Scalar> w(numOfSpecies * order);
         unsigned int cppAD_argument_size = 0;
@@ -258,14 +216,12 @@ template <typename Scalar> class AdjointEngine {
             }
 
             if (adjointIntermediatePointer->orderDOWN == true) {
-                Scalar *d_kahan = new Scalar[4];
-                for (i = 0; i < 4; i++)
-                    d_kahan[i] = 0.0;
+                std::vector<Scalar> d_kahan(4, (Scalar)0.0);
                 Scalar y;
                 Scalar t;
 
                 order_corrector_adjoint += 1;
-                Scalar *d_i = new Scalar[6];
+                std::vector<Scalar> d_i(6, (Scalar)0.0);
 
                 d_i[0] = 0.0;
                 d_i[1] = 0.0;
@@ -289,23 +245,19 @@ template <typename Scalar> class AdjointEngine {
                         temp[i] = 0;
 
                     linalg::GEMV_NT(numOfSpecies, order_corrector_adjoint, blasScalarMinusONE,
-                                    z_adjoint[k], numOfSpecies, d_i, blasONE, blasScalarZERO, temp,
-                                    blasONE);
+                                    z_adjoint[k].data(), numOfSpecies, d_i.data(), blasONE,
+                                    blasScalarZERO, temp.data(), blasONE);
 
                     for (i = 0; i < numOfSpecies; i++)
                         z_adjoint[k][numOfSpecies * order_corrector_adjoint + i] = temp[i];
                 }
-                delete[] d_kahan;
-                delete[] d_i;
                 adjointIntermediatePointer = adjointIntermediatePointer->backLINK;
                 continue;
             }
 
             // next_l_vector
 
-            Scalar *l_kahan = new Scalar[6];
-            for (i = 0; i < 6; i++)
-                l_kahan[i] = 0.0;
+            std::vector<Scalar> l_kahan(6, (Scalar)0.0);
             Scalar y;
             Scalar t;
 
@@ -326,7 +278,6 @@ template <typename Scalar> class AdjointEngine {
                         l_i_adjoint[j] = t;
                     }
                 }
-            delete[] l_kahan;
 
             // BEGIN ITERATIVE MODE
 
@@ -340,8 +291,8 @@ template <typename Scalar> class AdjointEngine {
                     }
 
                     int blasTEMP = order_corrector_adjoint + 1;
-                    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_adjoint[k],
-                                    numOfSpecies, l_i_adjoint, blasONE, blasScalarZERO, temp,
+                    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_adjoint[k].data(),
+                                    numOfSpecies, l_i_adjoint.data(), blasONE, blasScalarZERO, temp.data(),
                                     blasONE);
 
                     for (i = 0; i < numOfSpecies; i++)
@@ -357,10 +308,10 @@ template <typename Scalar> class AdjointEngine {
                                                      scaling_D2_adjoint[j]);
                         }
 
-                        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE, b_adjoint[k],
+                        linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), blasONE, b_adjoint[k].data(),
                                      blasONE);
-                        linalg::GETRS_T(numOfSpecies, blasONE, P_adjoint, numOfSpecies, ip_adjoint,
-                                        b_adjoint[k], numOfSpecies);
+                        linalg::GETRS_T(numOfSpecies, blasONE, P_adjoint.data(), numOfSpecies, ip_adjoint.data(),
+                                        b_adjoint[k].data(), numOfSpecies);
 
                         for (j = 0; j < numOfSpecies; j++) {
                             b_adjoint[k][j] =
@@ -369,11 +320,11 @@ template <typename Scalar> class AdjointEngine {
                                 (-b_adjoint[k][j] * step_size_h_adjoint) / l_i_adjoint[1];
                         }
                         Scalar blasTEMP = (Scalar)1.0 / l_i_adjoint[1];
-                        linalg::AXPY(numOfSpecies, blasScalarONE, b_adjoint[k], blasONE,
-                                     correctorVector_adjoint[k], blasONE);
-                        linalg::AXPY(numOfSpecies, blasScalarMinusONE, b_adjoint[k], blasONE,
-                                     z_adjoint[k], blasONE);
-                        linalg::AXPY(numOfSpecies, blasTEMP, b_adjoint[k], blasONE,
+                        linalg::AXPY(numOfSpecies, blasScalarONE, b_adjoint[k].data(), blasONE,
+                                     correctorVector_adjoint[k].data(), blasONE);
+                        linalg::AXPY(numOfSpecies, blasScalarMinusONE, b_adjoint[k].data(), blasONE,
+                                     z_adjoint[k].data(), blasONE);
+                        linalg::AXPY(numOfSpecies, blasTEMP, b_adjoint[k].data(), blasONE,
                                      &z_adjoint[k][numOfSpecies], blasONE);
                     }
                     dw = adjointIntermediatePointer
@@ -383,8 +334,8 @@ template <typename Scalar> class AdjointEngine {
                     for (k = 0; k < order; k++) {
                         for (j = 0; j < numOfSpecies; j++)
                             temp[j] = dw[j * order + order - k - 1];
-                        linalg::AXPY(numOfSpecies, blasScalarONE, temp, blasONE,
-                                     correctorVector_adjoint[k], blasONE);
+                        linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), blasONE,
+                                     correctorVector_adjoint[k].data(), blasONE);
                     }
 
                     // SAVE PARAMETER VALUES
@@ -398,8 +349,8 @@ template <typename Scalar> class AdjointEngine {
                 }
 
                 for (k = 0; k < order; k++)
-                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[k], blasONE,
-                                 z_adjoint[k], blasONE);
+                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[k].data(), blasONE,
+                                 z_adjoint[k].data(), blasONE);
 
                 if (!adjointIntermediatePointer->P.empty()) {
                     adjointIterationMatrixPointer = adjointIntermediatePointer->backLINK;
@@ -578,19 +529,19 @@ template <typename Scalar> class AdjointEngine {
 
                 // CALCULATION OF CORRECTOR SEED VECTOR
 
-                Scalar *saveOldSeed = new Scalar[numOfSpecies];
+                std::vector<Scalar> saveOldSeed(numOfSpecies);
 
                 for (k = 0; k < order; k++) {
                     for (i = 0; i < numOfSpecies; i++)
                         correctorVector_adjoint[k][i] = 0.0;
 
                     int blasTEMP = order_corrector_adjoint + 1;
-                    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_adjoint[k],
-                                    numOfSpecies, l_i_adjoint, blasONE, blasScalarZERO,
-                                    correctorVector_adjoint[k], blasONE);
+                    linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_adjoint[k].data(),
+                                    numOfSpecies, l_i_adjoint.data(), blasONE, blasScalarZERO,
+                                    correctorVector_adjoint[k].data(), blasONE);
 
-                    linalg::AXPY(numOfSpecies, blasScalarMinusONE, correctorVector_adjoint[k],
-                                 blasONE, z_adjoint[k], blasONE);
+                    linalg::AXPY(numOfSpecies, blasScalarMinusONE, correctorVector_adjoint[k].data(),
+                                 blasONE, z_adjoint[k].data(), blasONE);
 
                     // CALCULATION OF THE RHS SEED INPUT MATRIX
 
@@ -604,7 +555,7 @@ template <typename Scalar> class AdjointEngine {
                     }
                     linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P.data(),
                                     numOfSpecies, adjointIntermediatePointer->ip.data(),
-                                    correctorVector_adjoint[k], numOfSpecies);
+                                    correctorVector_adjoint[k].data(), numOfSpecies);
 
                     for (i = 0; i < numOfSpecies; i++)
                         correctorVector_adjoint[k][i] =
@@ -627,18 +578,18 @@ template <typename Scalar> class AdjointEngine {
                             dw[(numOfSpecies + 1 + j) * order + order - 0 - 1];
                     }
 
-                linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[0], blasONE,
-                             z_adjoint[0], blasONE);
+                linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[0].data(), blasONE,
+                             z_adjoint[0].data(), blasONE);
                 Scalar blasTEMP = -(1 / l_i_adjoint[1]);
-                linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[0], blasONE,
+                linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[0].data(), blasONE,
                              &z_adjoint[0][numOfSpecies], blasONE);
 
                 // 1-th Taylor Coefficients
 
                 if (order > 1) {
-                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[1], blasONE,
-                                 z_adjoint[1], blasONE);
-                    linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[1], blasONE,
+                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[1].data(), blasONE,
+                                 z_adjoint[1].data(), blasONE);
+                    linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[1].data(), blasONE,
                                  &z_adjoint[1][numOfSpecies], blasONE);
 
                     if (RHS_type == 2)
@@ -661,7 +612,7 @@ template <typename Scalar> class AdjointEngine {
 
                     linalg::GETRS_T(numOfSpecies, blasONE, adjointIntermediatePointer->P.data(),
                                     numOfSpecies, adjointIntermediatePointer->ip.data(),
-                                    correctorVector_adjoint[0], numOfSpecies);
+                                    correctorVector_adjoint[0].data(), numOfSpecies);
 
                     for (i = 0; i < numOfSpecies; i++)
                         correctorVector_adjoint[0][i] =
@@ -682,12 +633,11 @@ template <typename Scalar> class AdjointEngine {
                             solution_adjoint_parameter[j][1] -=
                                 (step_size_h_adjoint / l_i_adjoint[1]) * dw[numOfSpecies + 1 + j];
 
-                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[0], blasONE,
-                                 z_adjoint[1], blasONE);
-                    linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[0], blasONE,
+                    linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_adjoint[0].data(), blasONE,
+                                 z_adjoint[1].data(), blasONE);
+                    linalg::AXPY(numOfSpecies, blasTEMP, correctorVector_adjoint[0].data(), blasONE,
                                  &z_adjoint[1][numOfSpecies], blasONE);
                 }
-                delete[] saveOldSeed;
             }
 
             // END DIRECT MODE
@@ -717,38 +667,38 @@ template <typename Scalar> class AdjointEngine {
                 case 1:
                     blasTEMP = 2;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A1, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A1, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 case 2:
                     blasTEMP = 3;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A2, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A2, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 case 3:
                     blasTEMP = 4;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A3, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A3, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 case 4:
                     blasTEMP = 5;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A4, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A4, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 case 5:
                     blasTEMP = 6;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A5, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A5, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 case 6:
                     blasTEMP = 7;
                     linalg::DGEMM_NT_NT(numOfSpecies, blasTEMP, blasTEMP, blasScalarONE,
-                                        z_adjoint_store[k], numOfSpecies, A6, blasTEMP,
-                                        blasScalarZERO, z_adjoint[k], numOfSpecies);
+                                        z_adjoint_store[k].data(), numOfSpecies, A6, blasTEMP,
+                                        blasScalarZERO, z_adjoint[k].data(), numOfSpecies);
                     break;
                 }
             }
@@ -846,28 +796,7 @@ template <typename Scalar> class AdjointEngine {
 
         stored_adjoint_order = order;
 
-        // delete
-
-        if (!direct) {
-            delete[] ip_adjoint;
-            delete[] scaling_D1_adjoint;
-            delete[] scaling_D2_adjoint;
-            delete[] P_adjoint;
-        }
-
-        for (i = 0; i < order; i++) {
-            delete[] z_adjoint[i];
-            delete[] z_adjoint_store[i];
-            delete[] correctorVector_adjoint[i];
-            delete[] b_adjoint[i];
-            delete[] temp_adjoint[i];
-        }
-        delete[] z_adjoint;
-        delete[] z_adjoint_store;
-        delete[] correctorVector_adjoint;
-        delete[] b_adjoint;
-        delete[] temp_adjoint;
-        delete[] temp;
+        // (RAII: all workspace vectors above clean themselves up on return.)
 
         // T26 guard: same as forward — the taping replay is unstable for high-order BDF
         // over long stiff intervals. Fail loudly instead of returning a diverged value.
@@ -886,8 +815,8 @@ template <typename Scalar> class AdjointEngine {
     }
 
     // Adjoint results for Taylor orders 0..stored_adjoint_order-1.
-    Scalar **solution_adjoint_species = nullptr;
-    Scalar **solution_adjoint_parameter = nullptr;
+    std::vector<std::vector<Scalar>> solution_adjoint_species;
+    std::vector<std::vector<Scalar>> solution_adjoint_parameter;
     unsigned int stored_adjoint_order = 0;
 
   private:

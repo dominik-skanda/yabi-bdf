@@ -178,8 +178,10 @@ template <typename Scalar> class StepController {
     StepDecision prepareNextStep(unsigned int numSpecies, unsigned int numDerivatives,
                                  const std::vector<Scalar> &errorWeights, Scalar reachableError,
                                  const std::vector<Scalar> &reachableErrorDerivatives,
-                                 Scalar **zCorrectorDerivatives, Scalar **correctorDerivatives,
-                                 Scalar **correctorOldDerivatives, Scalar **errorWeightsDerivatives,
+                                 std::vector<std::vector<Scalar>> &zCorrectorDerivatives,
+                                 std::vector<std::vector<Scalar>> &correctorDerivatives,
+                                 std::vector<std::vector<Scalar>> &correctorOldDerivatives,
+                                 std::vector<std::vector<Scalar>> &errorWeightsDerivatives,
                                  Scalar minimalEta, Scalar maxStepLength, Scalar tEnd) {
         unsigned int i, j, z;
         bool isOrderUp = false;
@@ -232,7 +234,7 @@ template <typename Scalar> class StepController {
             Scalar eta_q_minus = 0.0;
 
             Scalar temp1 = 0.0;
-            Scalar *temp2 = new Scalar[numSpecies];
+            std::vector<Scalar> temp2(numSpecies);
 
             if (nordsieck.order_corrector > 1) {
                 temp1 = -1.0;
@@ -247,7 +249,7 @@ template <typename Scalar> class StepController {
                     temp2[i] = nordsieck.z_corrector[numSpecies * nordsieck.order_corrector + i] *
                                temp1 / errorWeights[i];
 
-                normWeightedLocalTruncError = linalg::NRM2(numSpecies, temp2, 1) / numSpecies;
+                normWeightedLocalTruncError = linalg::NRM2(numSpecies, temp2.data(), 1) / numSpecies;
 
                 Scalar mu =
                     config.ORDER_DOWN_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
@@ -275,7 +277,7 @@ template <typename Scalar> class StepController {
                                 temp1 / errorWeightsDerivatives[z][i];
 
                         normWeightedLocalTruncError =
-                            linalg::NRM2(numSpecies, temp2, 1) / numSpecies;
+                            linalg::NRM2(numSpecies, temp2.data(), 1) / numSpecies;
 
                         mu = config.ORDER_DOWN_SAVETY_STEP *
                              (reachableErrorDerivatives[z] / normWeightedLocalTruncError);
@@ -326,7 +328,7 @@ template <typename Scalar> class StepController {
                                (nordsieck.corrector[i] - (nordsieck.corrector_old[i] * temp1)) /
                                errorWeights[i];
 
-                normWeightedLocalTruncError = linalg::NRM2(numSpecies, temp2, 1) / numSpecies;
+                normWeightedLocalTruncError = linalg::NRM2(numSpecies, temp2.data(), 1) / numSpecies;
 
                 Scalar mu =
                     config.ORDER_UP_SAVETY_STEP * (reachableError / normWeightedLocalTruncError);
@@ -354,7 +356,7 @@ template <typename Scalar> class StepController {
                                        errorWeightsDerivatives[z][i];
 
                         normWeightedLocalTruncError =
-                            linalg::NRM2(numSpecies, temp2, 1) / numSpecies;
+                            linalg::NRM2(numSpecies, temp2.data(), 1) / numSpecies;
 
                         mu = config.ORDER_UP_SAVETY_STEP *
                              (reachableErrorDerivatives[z] / normWeightedLocalTruncError);
@@ -380,7 +382,6 @@ template <typename Scalar> class StepController {
                 }
             }
 
-            delete[] temp2;
             Scalar eta_q = minimalEta;
 
             if (nordsieck.order_corrector - 1 == 1)
@@ -476,13 +477,11 @@ template <typename Scalar> class StepController {
                     nordsieck.num_of_steps_per_order = 0.0;
                     isOrderUp = true;
                 } else {
-                    Scalar *d_kahan = new Scalar[4];
-                    for (i = 0; i < 4; i++)
-                        d_kahan[i] = 0.0;
+                    std::vector<Scalar> d_kahan(4, (Scalar)0.0);
                     Scalar y;
                     Scalar t;
 
-                    Scalar *d_i = new Scalar[6];
+                    std::vector<Scalar> d_i(6, (Scalar)0.0);
                     d_i[0] = 0.0;
                     d_i[1] = 0.0;
                     for (i = 2; i <= nordsieck.order_corrector; i++)
@@ -503,13 +502,13 @@ template <typename Scalar> class StepController {
                             }
                         }
 
-                    Scalar *temp = new Scalar[numSpecies];
+                    std::vector<Scalar> temp(numSpecies);
                     for (i = 0; i < numSpecies; i++)
                         temp[i] = nordsieck.z_corrector[nordsieck.order_corrector * numSpecies + i];
 
                     Scalar blasTEMP = -1.0;
-                    linalg::GER(numSpecies, nordsieck.order_corrector, blasTEMP, temp, 1, d_i, 1,
-                                nordsieck.z_corrector.data(), numSpecies);
+                    linalg::GER(numSpecies, nordsieck.order_corrector, blasTEMP, temp.data(), 1,
+                                d_i.data(), 1, nordsieck.z_corrector.data(), numSpecies);
 
                     if (numDerivatives > 0) {
                         for (z = 0; z < numDerivatives; z++) {
@@ -518,12 +517,12 @@ template <typename Scalar> class StepController {
                                                                        numSpecies +
                                                                    i];
                             Scalar blasTEMP = -1.0;
-                            linalg::GER(numSpecies, nordsieck.order_corrector, blasTEMP, temp, 1,
-                                        d_i, 1, zCorrectorDerivatives[z], numSpecies);
+                            linalg::GER(numSpecies, nordsieck.order_corrector, blasTEMP, temp.data(),
+                                        1, d_i.data(), 1, zCorrectorDerivatives[z].data(),
+                                        numSpecies);
                         }
                     }
 
-                    delete[] temp;
                     nordsieck.order_corrector -= 1;
                     nordsieck.step_size_h = nordsieck.step_size_h * eta_q_minus;
                     if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
@@ -533,8 +532,6 @@ template <typename Scalar> class StepController {
                     }
                     nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
 
-                    delete[] d_i;
-                    delete[] d_kahan;
                     nordsieck.num_of_steps_per_order = 0;
                     isOrderDown = true;
                 }

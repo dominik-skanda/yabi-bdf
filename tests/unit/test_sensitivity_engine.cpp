@@ -54,8 +54,8 @@ int main() {
     yabi_test::check(f.sensitivity.freeSimultaneousDerivatives(),
                      "freeSimultaneousDerivatives with no derivatives");
     yabi_test::check(f.sensitivity.numOfDerivatives == 0 &&
-                         f.sensitivity.z_predictor_derivatives == nullptr,
-                     "freeSimultaneousDerivatives keeps empty state null");
+                         f.sensitivity.z_predictor_derivatives.empty(),
+                     "freeSimultaneousDerivatives keeps empty state");
 
     return yabi_test::finish("SensitivityEngine unit tests");
 }

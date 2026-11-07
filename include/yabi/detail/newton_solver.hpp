@@ -45,12 +45,12 @@ template <typename Scalar> class NewtonSolver {
                  const unsigned int &numOfSpecies, const unsigned int &RHS_type,
                  const unsigned int &sizeOfParameter, std::vector<Scalar> &parameter,
                  std::vector<Scalar> &error_weights, std::vector<Scalar> &absolut_error,
-                 Scalar &relative_error, Scalar **&error_weights_derivatives,
+                 Scalar &relative_error, std::vector<std::vector<Scalar>> &error_weights_derivatives,
                  Scalar **&absolut_error_derivatives, Scalar *&relative_error_derivatives,
                  Scalar &t_ende, Scalar &minimalEta, Scalar &reachableError,
                  std::vector<Scalar> &reachableError_derivatives, unsigned int &numOfDerivatives,
-                 bool &direct, bool &taping, Scalar **&z_predictor_derivatives,
-                 Scalar **&corrector_derivatives, Scalar **&p_seed_derivatives,
+                 bool &direct, bool &taping, std::vector<std::vector<Scalar>> &z_predictor_derivatives,
+                 std::vector<std::vector<Scalar>> &corrector_derivatives, Scalar **&p_seed_derivatives,
                  ReplayTape<Scalar> *&startTAPE, ReplayTape<Scalar> *&endTAPE,
                  ReplayTapeStore<Scalar> &replayTapeStore, AdFunList &cppADFunList,
                  typename AdFunList::iterator &intermediateCppADFunIterator, bool &internalError)
@@ -174,38 +174,34 @@ template <typename Scalar> class NewtonSolver {
             YABI_LOG_WARN("matrix-free solver installed but the right-hand side exposes no Jacobian "
                           "sparsity pattern; using the dense explicit path");
         }
-        Scalar *root = new Scalar[numOfSpecies];
+        std::vector<Scalar> root(numOfSpecies);
 
         for (i = 0; i < numOfSpecies; i++)
             root[i] = nordsieck.z_predictor[i];
 
         StepController<Scalar>::calculateErrorWeights(numOfSpecies, config.ERROR_WEIGHTS_INDEX,
-                                                      error_weights.data(), root,
+                                                      error_weights.data(), root.data(),
                                                       absolut_error.data(), relative_error);
 
-        Scalar *b = new Scalar[numOfSpecies];
-        Scalar *temp = new Scalar[numOfSpecies];
+        std::vector<Scalar> b(numOfSpecies);
+        std::vector<Scalar> temp(numOfSpecies);
 
-        Scalar **b_derivatives = NULL;
-        Scalar **root_derivatives = NULL;
-        Scalar **convergenceResidual_derivatives = NULL;
+        std::vector<std::vector<Scalar>> b_derivatives;
+        std::vector<std::vector<Scalar>> root_derivatives;
+        std::vector<std::vector<Scalar>> convergenceResidual_derivatives;
         if (numOfDerivatives > 0 && !direct) {
-            root_derivatives = new Scalar *[numOfDerivatives];
-            b_derivatives = new Scalar *[numOfDerivatives];
-            convergenceResidual_derivatives = new Scalar *[numOfDerivatives];
+            root_derivatives.assign(numOfDerivatives, std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+            b_derivatives.assign(numOfDerivatives, std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+            convergenceResidual_derivatives.assign(numOfDerivatives,
+                                                   std::vector<Scalar>(2, (Scalar)0.0));
             for (i = 0; i < numOfDerivatives; i++) {
-                convergenceResidual_derivatives[i] = new Scalar[2];
-                convergenceResidual_derivatives[i][0] = 0.0;
-                convergenceResidual_derivatives[i][1] = 0.0;
-                root_derivatives[i] = new Scalar[numOfSpecies];
-                b_derivatives[i] = new Scalar[numOfSpecies];
                 for (j = 0; j < numOfSpecies; j++) {
                     root_derivatives[i][j] = z_predictor_derivatives[i][j];
                     corrector_derivatives[i][j] = 0.0;
                 }
                 StepController<Scalar>::calculateErrorWeights(
-                    numOfSpecies, config.ERROR_WEIGHTS_INDEX, error_weights_derivatives[i],
-                    z_predictor_derivatives[i], absolut_error_derivatives[i],
+                    numOfSpecies, config.ERROR_WEIGHTS_INDEX, error_weights_derivatives[i].data(),
+                    z_predictor_derivatives[i].data(), absolut_error_derivatives[i],
                     relative_error_derivatives[i]);
                 // Same guard as the main path (T09): a zero/non-finite weight makes the later
                 // logb(error_weights_derivatives[z][i]) undefined (flushes the sensitivity Newton
@@ -241,28 +237,7 @@ template <typename Scalar> class NewtonSolver {
         for (i = 0; i < numOfSpecies; i++)
             nordsieck.corrector[i] = 0.0;
 
-        Scalar *tempMACHINEprecision = new Scalar[numOfSpecies];
-
-        // Release this function's workspace on a hard internal failure.  The
-        // caller aborts the integration if any of the guards below fires; the
-        // alternative (continuing with a singular Newton matrix) used to return
-        // a wrong answer as success.
-        auto releaseWorkspace = [&]() {
-            delete[] root;
-            delete[] b;
-            delete[] temp;
-            delete[] tempMACHINEprecision;
-            if (numOfDerivatives > 0 && !direct) {
-                for (l = 0; l < numOfDerivatives; l++) {
-                    delete[] root_derivatives[l];
-                    delete[] b_derivatives[l];
-                    delete[] convergenceResidual_derivatives[l];
-                }
-                delete[] b_derivatives;
-                delete[] root_derivatives;
-                delete[] convergenceResidual_derivatives;
-            }
-        };
+        std::vector<Scalar> tempMACHINEprecision(numOfSpecies);
 
         while (newtonIterate <= config.MAXNEWTONITERATION) {
             stats.newtonIterations++;
@@ -286,7 +261,6 @@ template <typename Scalar> class NewtonSolver {
                         YABI_LOG_ERROR("ERROR: sparse Jacobian evaluation failed!");
 
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                     for (std::size_t k = 0; k < values.size(); ++k)
@@ -294,7 +268,6 @@ template <typename Scalar> class NewtonSolver {
                             YABI_LOG_ERROR("element of jacobian is nan or inf!");
 
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                     J_csc.val = std::move(values);
@@ -304,7 +277,6 @@ template <typename Scalar> class NewtonSolver {
                         YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                     if (useMatrixFree) {
@@ -315,14 +287,12 @@ template <typename Scalar> class NewtonSolver {
                                                     scaling_D2.data(), numOfSpecies)) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                 } else if (useJFree) {
                     if (!configureJFreeMatrix(cppAD_argument)) {
                         YABI_LOG_ERROR("ERROR: J-free matrix-free setup failed!");
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                 } else {
@@ -338,7 +308,6 @@ template <typename Scalar> class NewtonSolver {
                                 YABI_LOG_ERROR("element of jacobian is nan or inf!");
 
                                 internalError = true;
-                                releaseWorkspace();
                                 return false;
                             }
                             J[i * numOfSpecies + j] = df[i];
@@ -363,20 +332,17 @@ template <typename Scalar> class NewtonSolver {
                         YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                     if (linearSolver) {
                         if (!linearSolver->initialize(numOfSpecies)) {
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                         if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
                                                      scaling_D2.data(), numOfSpecies)) {
                             YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                     } else {
@@ -385,7 +351,6 @@ template <typename Scalar> class NewtonSolver {
                         if (sign != 0) {
                             YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                     }
@@ -422,7 +387,6 @@ template <typename Scalar> class NewtonSolver {
                         YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                     if (useMatrixFree)
@@ -431,14 +395,12 @@ template <typename Scalar> class NewtonSolver {
                                                     scaling_D2.data(), numOfSpecies)) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                 } else if (useJFree) {
                     if (!configureJFreeMatrix(matrixFreeBase)) {
                         YABI_LOG_ERROR("ERROR: J-free matrix-free setup failed!");
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                 } else {
@@ -458,20 +420,17 @@ template <typename Scalar> class NewtonSolver {
                         YABI_LOG_ERROR("Newton scaling failed (invalid error weight)!");
 
                         internalError = true;
-                        releaseWorkspace();
                         return false;
                     }
                     if (linearSolver) {
                         if (!linearSolver->initialize(numOfSpecies)) {
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                         if (!linearSolver->factorize(P.data(), ip.data(), scaling_D1.data(),
                                                      scaling_D2.data(), numOfSpecies)) {
                             YABI_LOG_ERROR("ERROR: LuFactor Failed!");
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                     } else {
@@ -480,7 +439,6 @@ template <typename Scalar> class NewtonSolver {
                         if (sign != 0) {
                             YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", sign, ")");
                             internalError = true;
-                            releaseWorkspace();
                             return false;
                         }
                     }
@@ -539,12 +497,12 @@ template <typename Scalar> class NewtonSolver {
             Scalar blasTEMP1 = 1.0 / nordsieck.l_i[1];
             Scalar blasTEMP2 = -nordsieck.step_size_h / nordsieck.l_i[1];
 
-            linalg::SCAL(numOfSpecies, blasTEMP1, b, 1);
-            linalg::AXPY(numOfSpecies, blasTEMP2, temp, 1, b, 1);
-            linalg::AXPY(numOfSpecies, blasScalarONE, root, 1, b, 1);
-            linalg::AXPY(numOfSpecies, blasScalarMinusONE, nordsieck.z_predictor.data(), 1, b, 1);
+            linalg::SCAL(numOfSpecies, blasTEMP1, b.data(), 1);
+            linalg::AXPY(numOfSpecies, blasTEMP2, temp.data(), 1, b.data(), 1);
+            linalg::AXPY(numOfSpecies, blasScalarONE, root.data(), 1, b.data(), 1);
+            linalg::AXPY(numOfSpecies, blasScalarMinusONE, nordsieck.z_predictor.data(), 1, b.data(), 1);
             const Scalar newtonResidual =
-                linalg::NRM2(numOfSpecies, b, 1) / (Scalar)numOfSpecies;
+                linalg::NRM2(numOfSpecies, b.data(), 1) / (Scalar)numOfSpecies;
             for (j = 0; j < numOfSpecies; j++)
                 b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
@@ -560,19 +518,18 @@ template <typename Scalar> class NewtonSolver {
 
             if (useSparseAssembly || useJFree) {
                 sign = linearSolver->solveCsc(P_csc, ip.data(), scaling_D1.data(),
-                                              scaling_D2.data(), b, numOfSpecies, 1);
+                                              scaling_D2.data(), b.data(), numOfSpecies, 1);
             } else if (linearSolver) {
                 sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
-                                           scaling_D2.data(), b, numOfSpecies, 1);
+                                           scaling_D2.data(), b.data(), numOfSpecies, 1);
             } else {
-                sign = linalg::GETRS_NT(numOfSpecies, 1, P.data(), numOfSpecies, ip.data(), b,
+                sign = linalg::GETRS_NT(numOfSpecies, 1, P.data(), numOfSpecies, ip.data(), b.data(),
                                         numOfSpecies);
             }
             if (sign != 0) {
                 YABI_LOG_ERROR("ERROR: linear solve failed (info=", sign, ")!");
 
                 internalError = true;
-                releaseWorkspace();
                 return false;
             }
             previousNewtonResidual = newtonResidual;
@@ -580,8 +537,8 @@ template <typename Scalar> class NewtonSolver {
             for (j = 0; j < numOfSpecies; j++)
                 temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
 
-            linalg::AXPY(numOfSpecies, blasScalarONE, temp, 1, root, 1);
-            linalg::AXPY(numOfSpecies, blasScalarONE, temp, 1, nordsieck.corrector.data(), 1);
+            linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, root.data(), 1);
+            linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, nordsieck.corrector.data(), 1);
 
             if (numOfDerivatives > 0 && !direct) {
                 for (z = 0; z < numOfDerivatives; z++) {
@@ -603,29 +560,29 @@ template <typename Scalar> class NewtonSolver {
                         b_derivatives[z][j] = z_predictor_derivatives[z][numOfSpecies + j];
                     }
 
-                    linalg::SCAL(numOfSpecies, blasTEMP1, b_derivatives[z], 1);
-                    linalg::AXPY(numOfSpecies, blasTEMP2, temp, 1, b_derivatives[z], 1);
-                    linalg::AXPY(numOfSpecies, blasScalarONE, root_derivatives[z], 1,
-                                 b_derivatives[z], 1);
-                    linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_derivatives[z], 1,
-                                 b_derivatives[z], 1);
+                    linalg::SCAL(numOfSpecies, blasTEMP1, b_derivatives[z].data(), 1);
+                    linalg::AXPY(numOfSpecies, blasTEMP2, temp.data(), 1, b_derivatives[z].data(), 1);
+                    linalg::AXPY(numOfSpecies, blasScalarONE, root_derivatives[z].data(), 1,
+                                 b_derivatives[z].data(), 1);
+                    linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_derivatives[z].data(), 1,
+                                 b_derivatives[z].data(), 1);
                     for (j = 0; j < numOfSpecies; j++)
                         b_derivatives[z][j] = -(Scalar)scalbn(b_derivatives[z][j], scaling_D1[j]);
 
                     sign =
                         linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
-                                            scaling_D2.data(), b_derivatives[z], numOfSpecies, 1);
+                                            scaling_D2.data(), b_derivatives[z].data(), numOfSpecies, 1);
 
                     for (j = 0; j < numOfSpecies; j++)
                         temp[j] = (Scalar)scalbn(b_derivatives[z][j], scaling_D2[j]);
 
-                    linalg::AXPY(numOfSpecies, blasScalarONE, temp, 1, root_derivatives[z], 1);
-                    linalg::AXPY(numOfSpecies, blasScalarONE, temp, 1, corrector_derivatives[z], 1);
+                    linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, root_derivatives[z].data(), 1);
+                    linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, corrector_derivatives[z].data(), 1);
                 }
             }
 
             if (newtonIterate == 1) {
-                convergenceResidual[0] = linalg::NRM2(numOfSpecies, b, 1) / numOfSpecies;
+                convergenceResidual[0] = linalg::NRM2(numOfSpecies, b.data(), 1) / numOfSpecies;
 
                 minimalRate =
                     (Scalar)pow((error_multiplier * config.NEWTON_CONVERGED * relative_error) /
@@ -640,7 +597,7 @@ template <typename Scalar> class NewtonSolver {
                                 -(int)floor(logb(error_weights_derivatives[z][i]) + 0.5));
 
                         convergenceResidual_derivatives[z][0] =
-                            linalg::NRM2(numOfSpecies, temp, 1) / numOfSpecies;
+                            linalg::NRM2(numOfSpecies, temp.data(), 1) / numOfSpecies;
 
                         Scalar tempRATE = 0;
                         tempRATE = (Scalar)pow((error_multiplier * config.NEWTON_CONVERGED *
@@ -662,7 +619,7 @@ template <typename Scalar> class NewtonSolver {
                                 -(int)floor(logb(error_weights_derivatives[z][j]) + 0.5));
 
                         Scalar tempMACHINEprecisionNorm =
-                            linalg::NRM2(numOfSpecies, tempMACHINEprecision, 1) / numOfSpecies;
+                            linalg::NRM2(numOfSpecies, tempMACHINEprecision.data(), 1) / numOfSpecies;
 
                         if (!(convergenceResidual_derivatives[z][0] <
                                   error_multiplier * config.NEWTON_CONVERGED *
@@ -676,7 +633,7 @@ template <typename Scalar> class NewtonSolver {
                     tempMACHINEprecision[j] = (Scalar)scalbn(root[j], -scaling_D2[j]);
 
                 Scalar tempMACHINEprecisionNorm =
-                    linalg::NRM2(numOfSpecies, tempMACHINEprecision, 1) / numOfSpecies;
+                    linalg::NRM2(numOfSpecies, tempMACHINEprecision.data(), 1) / numOfSpecies;
 
                 if (pass == true)
                     if (convergenceResidual[0] <
@@ -695,34 +652,14 @@ template <typename Scalar> class NewtonSolver {
                             } else
                                 endTAPE->NewtonIterates = newtonIterate;
                         }
-                        if (numOfDerivatives > 0 && !direct) {
-                            for (l = 0; l < numOfDerivatives; l++) {
-                                delete[] root_derivatives[l];
-                                delete[] b_derivatives[l];
-                                delete[] convergenceResidual_derivatives[l];
-                            }
-                            delete[] b_derivatives;
-                            delete[] root_derivatives;
-                            delete[] convergenceResidual_derivatives;
-                        }
                         // DIRECT SIMULTANEOUS MODE
 
                         if (numOfDerivatives > 0 && direct) {
                             std::vector<Scalar> df(numOfSpecies);
-                            Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
-                            int *ip_ = new int[numOfSpecies];
-
-                            long *scaling_D1_ = new long[numOfSpecies];
-                            long *scaling_D2_ = new long[numOfSpecies];
-
-                            // Free only this block's matrices; releaseWorkspace() handles the
-                            // rest of the function's workspace on a hard failure.
-                            auto releaseDirect = [&]() {
-                                delete[] P_;
-                                delete[] ip_;
-                                delete[] scaling_D1_;
-                                delete[] scaling_D2_;
-                            };
+                            std::vector<Scalar> P_(numOfSpecies * numOfSpecies);
+                            std::vector<int> ip_(numOfSpecies);
+                            std::vector<long> scaling_D1_(numOfSpecies);
+                            std::vector<long> scaling_D2_(numOfSpecies);
 
                             // CALCULATION OF JACOBIAN
 
@@ -763,8 +700,6 @@ template <typename Scalar> class NewtonSolver {
                                                 "sensitivities simultaneous1)");
 
                                             internalError = true;
-                                            releaseDirect();
-                                            releaseWorkspace();
                                             return false;
                                         }
                                         J_[i * numOfSpecies + j] = df[i];
@@ -786,8 +721,6 @@ template <typename Scalar> class NewtonSolver {
                                                 "sensitivities)");
 
                                             internalError = true;
-                                            releaseDirect();
-                                            releaseWorkspace();
                                             return false;
                                         }
                                         J_[i * numOfSpecies + j] = df[i];
@@ -831,8 +764,6 @@ template <typename Scalar> class NewtonSolver {
                                         sum, ")!");
 
                                     internalError = true;
-                                    releaseDirect();
-                                    releaseWorkspace();
                                     return false;
                                 }
                                 scaling_D1_[i] = (int)ceil(logb(sum));
@@ -850,12 +781,10 @@ template <typename Scalar> class NewtonSolver {
 
                             // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                             int info;
-                            info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
+                            info = linalg::GETRF(numOfSpecies, numOfSpecies, P_.data(), numOfSpecies, ip_.data());
                             if (info != 0) {
                                 YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", info, ")");
                                 internalError = true;
-                                releaseDirect();
-                                releaseWorkspace();
                                 return false;
                             }
 
@@ -898,7 +827,7 @@ template <typename Scalar> class NewtonSolver {
                                            nordsieck.l_i[1]))),
                                         scaling_D1_[j]);
 
-                                linalg::GETRS_NT(numOfSpecies, 1, P_, numOfSpecies, ip_, b,
+                                linalg::GETRS_NT(numOfSpecies, 1, P_.data(), numOfSpecies, ip_.data(), b.data(),
                                                  numOfSpecies);
 
                                 for (i = 0; i < numOfSpecies; i++)
@@ -906,23 +835,13 @@ template <typename Scalar> class NewtonSolver {
                                         (Scalar)scalbn(b[i], scaling_D2_[i]) -
                                         z_predictor_derivatives[z][i];
                             }
-
-                            delete[] P_;
-                            delete[] ip_;
-
-                            delete[] scaling_D1_;
-                            delete[] scaling_D2_;
                         }
 
-                        delete[] root;
-                        delete[] b;
-                        delete[] temp;
-                        delete[] tempMACHINEprecision;
                         return true;
                     }
             } else {
                 convergenceResidual[1] = convergenceResidual[0];
-                convergenceResidual[0] = linalg::NRM2(numOfSpecies, b, 1) / numOfSpecies;
+                convergenceResidual[0] = linalg::NRM2(numOfSpecies, b.data(), 1) / numOfSpecies;
 
                 if (numOfDerivatives > 0 && !direct) {
                     for (z = 0; z < numOfDerivatives; z++) {
@@ -934,7 +853,7 @@ template <typename Scalar> class NewtonSolver {
                                 scalbn(b_derivatives[z][i], scaling_D2[i]),
                                 -(int)floor(logb(error_weights_derivatives[z][i]) + 0.5));
                         convergenceResidual_derivatives[z][0] =
-                            linalg::NRM2(numOfSpecies, temp, 1) / numOfSpecies;
+                            linalg::NRM2(numOfSpecies, temp.data(), 1) / numOfSpecies;
                     }
                 }
             }
@@ -957,7 +876,7 @@ template <typename Scalar> class NewtonSolver {
                                 -(int)floor(logb(error_weights_derivatives[z][j]) + 0.5));
 
                         Scalar tempMACHINEprecisionNorm =
-                            linalg::NRM2(numOfSpecies, tempMACHINEprecision, 1) / numOfSpecies;
+                            linalg::NRM2(numOfSpecies, tempMACHINEprecision.data(), 1) / numOfSpecies;
 
                         if (!(ratio * convergenceResidual_derivatives[z][0] <
                                   error_multiplier * config.NEWTON_CONVERGED *
@@ -975,7 +894,7 @@ template <typename Scalar> class NewtonSolver {
                 for (j = 0; j < numOfSpecies; j++)
                     tempMACHINEprecision[j] = (Scalar)scalbn(root[j], -scaling_D2[j]);
                 Scalar tempMACHINEprecisionNorm =
-                    linalg::NRM2(numOfSpecies, tempMACHINEprecision, 1) / numOfSpecies;
+                    linalg::NRM2(numOfSpecies, tempMACHINEprecision.data(), 1) / numOfSpecies;
 
                 if (pass == true)
                     if (ratio * convergenceResidual[0] <
@@ -999,33 +918,12 @@ template <typename Scalar> class NewtonSolver {
                                 endTAPE->NewtonIterates = newtonIterate;
                         }
 
-                        if (numOfDerivatives > 0 && !direct) {
-                            for (l = 0; l < numOfDerivatives; l++) {
-                                delete[] root_derivatives[l];
-                                delete[] b_derivatives[l];
-                                delete[] convergenceResidual_derivatives[l];
-                            }
-                            delete[] b_derivatives;
-                            delete[] root_derivatives;
-                            delete[] convergenceResidual_derivatives;
-                        }
-
                         if (numOfDerivatives > 0 && direct) {
                             std::vector<Scalar> df(numOfSpecies);
-                            Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
-                            int *ip_ = new int[numOfSpecies];
-
-                            long *scaling_D1_ = new long[numOfSpecies];
-                            long *scaling_D2_ = new long[numOfSpecies];
-
-                            // Free only this block's matrices; releaseWorkspace() handles the
-                            // rest of the function's workspace on a hard failure.
-                            auto releaseDirect = [&]() {
-                                delete[] P_;
-                                delete[] ip_;
-                                delete[] scaling_D1_;
-                                delete[] scaling_D2_;
-                            };
+                            std::vector<Scalar> P_(numOfSpecies * numOfSpecies);
+                            std::vector<int> ip_(numOfSpecies);
+                            std::vector<long> scaling_D1_(numOfSpecies);
+                            std::vector<long> scaling_D2_(numOfSpecies);
 
                             // CALCULATION OF JACOBIAN
 
@@ -1066,8 +964,6 @@ template <typename Scalar> class NewtonSolver {
                                                 "sensitivities simultaneous2)");
 
                                             internalError = true;
-                                            releaseDirect();
-                                            releaseWorkspace();
                                             return false;
                                         }
                                         J_[i * numOfSpecies + j] = df[i];
@@ -1089,8 +985,6 @@ template <typename Scalar> class NewtonSolver {
                                                 "sensitivities)");
 
                                             internalError = true;
-                                            releaseDirect();
-                                            releaseWorkspace();
                                             return false;
                                         }
                                         J_[i * numOfSpecies + j] = df[i];
@@ -1134,8 +1028,6 @@ template <typename Scalar> class NewtonSolver {
                                         sum, ")!");
 
                                     internalError = true;
-                                    releaseDirect();
-                                    releaseWorkspace();
                                     return false;
                                 }
                                 scaling_D1_[i] = (int)ceil(logb(sum));
@@ -1153,12 +1045,10 @@ template <typename Scalar> class NewtonSolver {
 
                             // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                             int info;
-                            info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
+                            info = linalg::GETRF(numOfSpecies, numOfSpecies, P_.data(), numOfSpecies, ip_.data());
                             if (info != 0) {
                                 YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", info, ")");
                                 internalError = true;
-                                releaseDirect();
-                                releaseWorkspace();
                                 return false;
                             }
 
@@ -1201,7 +1091,7 @@ template <typename Scalar> class NewtonSolver {
                                            nordsieck.l_i[1]))),
                                         scaling_D1_[j]);
 
-                                linalg::GETRS_NT(numOfSpecies, 1, P_, numOfSpecies, ip_, b,
+                                linalg::GETRS_NT(numOfSpecies, 1, P_.data(), numOfSpecies, ip_.data(), b.data(),
                                                  numOfSpecies);
 
                                 for (i = 0; i < numOfSpecies; i++)
@@ -1209,39 +1099,13 @@ template <typename Scalar> class NewtonSolver {
                                         (Scalar)scalbn(b[i], scaling_D2_[i]) -
                                         z_predictor_derivatives[z][i];
                             }
-
-                            delete[] P_;
-                            delete[] ip_;
-
-                            delete[] scaling_D1_;
-                            delete[] scaling_D2_;
                         }
-
-                        delete[] root;
-                        delete[] b;
-                        delete[] temp;
-                        delete[] tempMACHINEprecision;
 
                         return true;
                     }
                 if (ratio > minimalRate && ratio > config.ACCEPT_NEWTON_CONVERGENCE_RATE) {
                     if (setJacobian == true) {
                         convergenceIndicator = -1.0;
-                        if (numOfDerivatives > 0 && !direct) {
-                            for (l = 0; l < numOfDerivatives; l++) {
-                                delete[] root_derivatives[l];
-                                delete[] b_derivatives[l];
-                                delete[] convergenceResidual_derivatives[l];
-                            }
-                            delete[] b_derivatives;
-                            delete[] root_derivatives;
-                            delete[] convergenceResidual_derivatives;
-                        }
-                        delete[] root;
-                        delete[] b;
-                        delete[] temp;
-                        delete[] tempMACHINEprecision;
-
                         return true;
                     }
                     if (setNewP == true && setJacobian == false) {
@@ -1289,21 +1153,6 @@ template <typename Scalar> class NewtonSolver {
 
         convergenceIndicator = -1;
 
-        if (numOfDerivatives > 0 && !direct) {
-            for (l = 0; l < numOfDerivatives; l++) {
-                delete[] root_derivatives[l];
-                delete[] b_derivatives[l];
-                delete[] convergenceResidual_derivatives[l];
-            }
-            delete[] b_derivatives;
-            delete[] root_derivatives;
-            delete[] convergenceResidual_derivatives;
-        }
-        delete[] root;
-        delete[] b;
-        delete[] temp;
-        delete[] tempMACHINEprecision;
-
         return true;
     }
 
@@ -1348,18 +1197,18 @@ template <typename Scalar> class NewtonSolver {
         // estimator in the dissertation (alpha_0 = -l_i[1]).
         temp1 *= nordsieck.l_i[1];
 
-        Scalar *temp2 = new Scalar[numOfSpecies];
+        std::vector<Scalar> temp2(numOfSpecies);
 
         for (i = 0; i < numOfSpecies; i++)
             temp2[i] = nordsieck.z_predictor[i];
-        linalg::AXPY(numOfSpecies, blasScalarONE, nordsieck.corrector.data(), 1, temp2, 1);
+        linalg::AXPY(numOfSpecies, blasScalarONE, nordsieck.corrector.data(), 1, temp2.data(), 1);
         StepController<Scalar>::calculateErrorWeights(numOfSpecies, config.ERROR_WEIGHTS_INDEX,
-                                                      error_weights.data(), temp2,
+                                                      error_weights.data(), temp2.data(),
                                                       absolut_error.data(), relative_error);
         for (i = 0; i < numOfSpecies; i++)
             temp2[i] /= error_weights[i];
         reachableError =
-            2 * config.MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2, 1) / numOfSpecies;
+            2 * config.MACHINEPRECISION * linalg::NRM2(numOfSpecies, temp2.data(), 1) / numOfSpecies;
         if (reachableError < relative_error)
             reachableError = relative_error;
 
@@ -1369,25 +1218,27 @@ template <typename Scalar> class NewtonSolver {
         for (i = 0; i < numOfSpecies; i++)
             temp2[i] = nordsieck.corrector[i] / temp1 / error_weights[i];
 
-        Scalar normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2, 1) / numOfSpecies;
-        Scalar *normWeightedLocalTruncError_derivatives = NULL;
+        Scalar normWeightedLocalTruncError = linalg::NRM2(numOfSpecies, temp2.data(), 1) / numOfSpecies;
+        std::vector<Scalar> normWeightedLocalTruncError_derivatives;
 
         if (normWeightedLocalTruncError > reachableError)
             pass = false;
 
         if (numOfDerivatives > 0) {
-            normWeightedLocalTruncError_derivatives = new Scalar[numOfDerivatives];
+            normWeightedLocalTruncError_derivatives.resize(numOfDerivatives);
             for (z = 0; z < numOfDerivatives; z++) {
                 for (i = 0; i < numOfSpecies; i++)
                     temp2[i] = z_predictor_derivatives[z][i];
-                linalg::AXPY(numOfSpecies, blasScalarONE, corrector_derivatives[z], 1, temp2, 1);
+                linalg::AXPY(numOfSpecies, blasScalarONE, corrector_derivatives[z].data(), 1,
+                             temp2.data(), 1);
                 StepController<Scalar>::calculateErrorWeights(
-                    numOfSpecies, config.ERROR_WEIGHTS_INDEX, error_weights_derivatives[z], temp2,
-                    absolut_error_derivatives[z], relative_error_derivatives[z]);
+                    numOfSpecies, config.ERROR_WEIGHTS_INDEX, error_weights_derivatives[z].data(),
+                    temp2.data(), absolut_error_derivatives[z], relative_error_derivatives[z]);
                 for (i = 0; i < numOfSpecies; i++)
                     temp2[i] /= error_weights_derivatives[z][i];
                 reachableError_derivatives[z] = 2 * config.MACHINEPRECISION *
-                                                linalg::NRM2(numOfSpecies, temp2, 1) / numOfSpecies;
+                                                linalg::NRM2(numOfSpecies, temp2.data(), 1) /
+                                                numOfSpecies;
                 if (reachableError_derivatives[z] < relative_error_derivatives[z])
                     reachableError_derivatives[z] = relative_error_derivatives[z];
 
@@ -1400,13 +1251,12 @@ template <typename Scalar> class NewtonSolver {
                         corrector_derivatives[z][i] / temp1 / error_weights_derivatives[z][i];
 
                 normWeightedLocalTruncError_derivatives[z] =
-                    linalg::NRM2(numOfSpecies, temp2, 1) / numOfSpecies;
+                    linalg::NRM2(numOfSpecies, temp2.data(), 1) / numOfSpecies;
 
                 if (normWeightedLocalTruncError_derivatives[z] > reachableError_derivatives[z])
                     pass = false;
             }
         }
-        delete[] temp2;
         if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
             pass = true;
 
@@ -1454,7 +1304,6 @@ template <typename Scalar> class NewtonSolver {
                     if (minimalEta > minimalEta_derivatives)
                         minimalEta = minimalEta_derivatives;
                 }
-                delete[] normWeightedLocalTruncError_derivatives;
             }
 
             if (nordsieck.order_corrector == 1)
@@ -1581,13 +1430,12 @@ template <typename Scalar> class NewtonSolver {
                 c_down /=
                     (nordsieck.l_i[1] - (nordsieck.step_size_h /
                                          nordsieck.stepSizeSet_new[nordsieck.order_corrector - 1]));
-                Scalar *err_down = new Scalar[numOfSpecies];
+                std::vector<Scalar> err_down(numOfSpecies);
                 for (i = 0; i < numOfSpecies; i++)
                     err_down[i] =
                         nordsieck.z_corrector[numOfSpecies * nordsieck.order_corrector + i] *
                         c_down / error_weights[i];
-                Scalar norm_err_down = linalg::NRM2(numOfSpecies, err_down, 1) / numOfSpecies;
-                delete[] err_down;
+                Scalar norm_err_down = linalg::NRM2(numOfSpecies, err_down.data(), 1) / numOfSpecies;
                 if (norm_err_down < normWeightedLocalTruncError ||
                     norm_err_down <= reachableError) {
                     nordsieck.order_corrector -= 1;
@@ -1629,8 +1477,6 @@ template <typename Scalar> class NewtonSolver {
             }
             nordsieck.t_i[0] = nordsieck.step_size_h + nordsieck.t_i[1];
 
-            if (numOfDerivatives > 0)
-                delete[] normWeightedLocalTruncError_derivatives;
             return 0; // repeat step
         }
         return true;
@@ -1864,7 +1710,7 @@ template <typename Scalar> class NewtonSolver {
     std::vector<Scalar> &error_weights;
     std::vector<Scalar> &absolut_error;
     Scalar &relative_error;
-    Scalar **&error_weights_derivatives;
+    std::vector<std::vector<Scalar>> &error_weights_derivatives;
     Scalar **&absolut_error_derivatives;
     Scalar *&relative_error_derivatives;
 
@@ -1876,8 +1722,8 @@ template <typename Scalar> class NewtonSolver {
     unsigned int &numOfDerivatives;
     bool &direct;
     bool &taping;
-    Scalar **&z_predictor_derivatives;
-    Scalar **&corrector_derivatives;
+    std::vector<std::vector<Scalar>> &z_predictor_derivatives;
+    std::vector<std::vector<Scalar>> &corrector_derivatives;
     Scalar **&p_seed_derivatives;
 
     ReplayTape<Scalar> *&startTAPE;

@@ -832,60 +832,11 @@ bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFu
 // DESTRUCTOR AND FREE MEMORY
 
 template <typename Scalar> BDFIntegrator<Scalar>::~BDFIntegrator() {
-    unsigned int i;
-
     // Releases the replay tape (nodes are owned by replayTapeStore) and the
-    // sensitivity scratch mirrors.
+    // sensitivity scratch mirrors.  The simultaneous-derivative arrays and the
+    // adjoint result arrays are RAII-owned (std::vector) and clean themselves up.
     linearSolver.reset();
     deleteOldTape();
-
-    // Simultaneous Derivatives
-
-    if (sensitivityEngine.error_weights_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.error_weights_derivatives[i];
-        delete[] sensitivityEngine.error_weights_derivatives;
-    }
-    sensitivityEngine.error_weights_derivatives = NULL;
-    sensitivityEngine.absolut_error_derivatives = NULL;
-    sensitivityEngine.relative_error_derivatives = NULL;
-
-    if (sensitivityEngine.z_predictor_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.z_predictor_derivatives[i];
-        delete[] sensitivityEngine.z_predictor_derivatives;
-    }
-    sensitivityEngine.z_predictor_derivatives = NULL;
-    if (sensitivityEngine.z_corrector_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.z_corrector_derivatives[i];
-        delete[] sensitivityEngine.z_corrector_derivatives;
-    }
-    sensitivityEngine.z_corrector_derivatives = NULL;
-    if (sensitivityEngine.z_corrector_derivatives_old != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.z_corrector_derivatives_old[i];
-        delete[] sensitivityEngine.z_corrector_derivatives_old;
-    }
-    sensitivityEngine.z_corrector_derivatives_old = NULL;
-    if (sensitivityEngine.corrector_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.corrector_derivatives[i];
-        delete[] sensitivityEngine.corrector_derivatives;
-    }
-    sensitivityEngine.corrector_derivatives = NULL;
-    if (sensitivityEngine.corrector_old_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.corrector_old_derivatives[i];
-        delete[] sensitivityEngine.corrector_old_derivatives;
-    }
-    sensitivityEngine.corrector_old_derivatives = NULL;
-    if (sensitivityEngine.solution_Vector_derivatives != NULL) {
-        for (i = 0; i < sensitivityEngine.numOfDerivatives; i++)
-            delete[] sensitivityEngine.solution_Vector_derivatives[i];
-        delete[] sensitivityEngine.solution_Vector_derivatives;
-    }
-    sensitivityEngine.solution_Vector_derivatives = NULL;
 
     cppADFunList.clear();
 

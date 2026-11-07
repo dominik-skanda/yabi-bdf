@@ -38,7 +38,7 @@ struct EngineFixture {
     std::vector<double> error_weights;
     std::vector<double> absolut_error;
     double relative_error = 0.0;
-    double **error_weights_derivatives = nullptr;
+    std::vector<std::vector<double>> error_weights_derivatives;
     double **absolut_error_derivatives = nullptr;
     double *relative_error_derivatives = nullptr;
     double t_ende = 0.0;
@@ -49,8 +49,8 @@ struct EngineFixture {
     bool direct = false;
     bool taping = false;
     bool internalError = false;
-    double **z_predictor_derivatives = nullptr;
-    double **corrector_derivatives = nullptr;
+    std::vector<std::vector<double>> z_predictor_derivatives;
+    std::vector<std::vector<double>> corrector_derivatives;
     double **p_seed_derivatives = nullptr;
     yabi::detail::ReplayTape<double> *startTAPE = nullptr;
     yabi::detail::ReplayTape<double> *endTAPE = nullptr;

@@ -9,6 +9,7 @@
 #define YABI_DETAIL_SENSITIVITY_ENGINE_HPP
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <list>
 #include <memory>
@@ -106,25 +107,22 @@ template <typename Scalar> class SensitivityEngine {
             y_seed_derivatives = y_seed_derivatives_;
             p_seed_derivatives = p_seed_derivatives_;
             reachableError_derivatives.resize(numOfDerivatives);
-            z_predictor_derivatives = new Scalar *[numOfDerivatives];
-            z_corrector_derivatives = new Scalar *[numOfDerivatives];
-            z_corrector_derivatives_old = new Scalar *[numOfDerivatives];
-            corrector_derivatives = new Scalar *[numOfDerivatives];
-            corrector_old_derivatives = new Scalar *[numOfDerivatives];
-            solution_Vector_derivatives = new Scalar *[numOfDerivatives];
-            error_weights_derivatives = new Scalar *[numOfDerivatives];
+            z_predictor_derivatives.assign(numOfDerivatives,
+                                           std::vector<Scalar>(numOfSpecies * 7, (Scalar)0.0));
+            z_corrector_derivatives.assign(numOfDerivatives,
+                                           std::vector<Scalar>(numOfSpecies * 7, (Scalar)0.0));
+            z_corrector_derivatives_old.assign(numOfDerivatives,
+                                               std::vector<Scalar>(numOfSpecies * 7, (Scalar)0.0));
+            corrector_derivatives.assign(numOfDerivatives,
+                                         std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+            corrector_old_derivatives.assign(numOfDerivatives,
+                                             std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+            solution_Vector_derivatives.assign(numOfDerivatives,
+                                               std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+            error_weights_derivatives.assign(numOfDerivatives,
+                                             std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
             for (i = 0; i < numOfDerivatives; i++) {
-                z_predictor_derivatives[i] = new Scalar[numOfSpecies * 7];
-                z_corrector_derivatives[i] = new Scalar[numOfSpecies * 7];
-                z_corrector_derivatives_old[i] = new Scalar[numOfSpecies * 7];
-                corrector_derivatives[i] = new Scalar[numOfSpecies];
-                corrector_old_derivatives[i] = new Scalar[numOfSpecies];
-                solution_Vector_derivatives[i] = new Scalar[numOfSpecies];
-                error_weights_derivatives[i] = new Scalar[numOfSpecies];
                 for (j = 0; j < numOfSpecies; j++) {
-                    error_weights_derivatives[i][j] = 0.0;
-                    for (k = 0; k < 7; k++)
-                        z_predictor_derivatives[i][numOfSpecies * k + j] = 0.0;
                     z_corrector_derivatives[i][j] = y_seed_derivatives[i][j];
                     z_corrector_derivatives_old[i][j] = y_seed_derivatives[i][j];
                 }
@@ -169,56 +167,14 @@ template <typename Scalar> class SensitivityEngine {
 
     // Release all simultaneous-derivative storage.
     bool freeSimultaneousDerivatives() {
-        unsigned int i;
-
-        if (error_weights_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] error_weights_derivatives[i];
-            delete[] error_weights_derivatives;
-        }
-        error_weights_derivatives = NULL;
-
-        if (z_predictor_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] z_predictor_derivatives[i];
-            delete[] z_predictor_derivatives;
-        }
-        z_predictor_derivatives = NULL;
-        if (z_corrector_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] z_corrector_derivatives[i];
-            delete[] z_corrector_derivatives;
-        }
-        z_corrector_derivatives = NULL;
-        if (corrector_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] corrector_derivatives[i];
-            delete[] corrector_derivatives;
-        }
-        corrector_derivatives = NULL;
-        if (corrector_old_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] corrector_old_derivatives[i];
-            delete[] corrector_old_derivatives;
-        }
-        corrector_old_derivatives = NULL;
-        if (solution_Vector_derivatives != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] solution_Vector_derivatives[i];
-            delete[] solution_Vector_derivatives;
-        }
-        solution_Vector_derivatives = NULL;
-
-        if (z_corrector_derivatives_old != NULL) {
-            for (i = 0; i < numOfDerivatives; i++)
-                delete[] z_corrector_derivatives_old[i];
-            delete[] z_corrector_derivatives_old;
-        }
-        z_corrector_derivatives_old = NULL;
-
-        if (!reachableError_derivatives.empty())
-
-            reachableError_derivatives.clear();
+        error_weights_derivatives.clear();
+        z_predictor_derivatives.clear();
+        z_corrector_derivatives.clear();
+        corrector_derivatives.clear();
+        corrector_old_derivatives.clear();
+        solution_Vector_derivatives.clear();
+        z_corrector_derivatives_old.clear();
+        reachableError_derivatives.clear();
 
         numOfDerivatives = 0;
         return true;
@@ -228,9 +184,7 @@ template <typename Scalar> class SensitivityEngine {
     inline bool calculate_l_vector_forward() {
         unsigned int i, j, k;
 
-        Scalar *l_kahan = new Scalar[6];
-        for (i = 0; i < 6; i++)
-            l_kahan[i] = 0.0;
+        std::vector<Scalar> l_kahan(6, (Scalar)0.0);
         Scalar y;
         Scalar t;
 
@@ -250,7 +204,6 @@ template <typename Scalar> class SensitivityEngine {
                     l_i_tape[j] = t;
                 }
             }
-        delete[] l_kahan;
 
         return true;
     }
@@ -321,14 +274,14 @@ template <typename Scalar> class SensitivityEngine {
         int blasTEMP = order_corrector_tape + 1;
         Scalar blasTEMP2 = 1.0;
         linalg::GER(numOfSpecies, blasTEMP, blasTEMP2, correctorVector_tape.data(), blasONE,
-                    l_i_tape, blasONE, z_corrector_tape.data(), numOfSpecies);
+                    l_i_tape.data(), blasONE, z_corrector_tape.data(), numOfSpecies);
 
         return true;
     }
 
     inline bool calculate_output_vector_forward() {
         unsigned int i, j;
-        Scalar *temp = new Scalar[order_corrector_tape + 1];
+        std::vector<Scalar> temp(order_corrector_tape + 1);
         for (i = 0; i <= order_corrector_tape; i++) {
             temp[i] = 1.0;
             for (j = 0; j < i; j++)
@@ -337,10 +290,9 @@ template <typename Scalar> class SensitivityEngine {
 
         int blasTEMP = order_corrector_tape + 1;
         linalg::GEMV_NT(numOfSpecies, blasTEMP, blasScalarONE, z_corrector_tape.data(),
-                        numOfSpecies, temp, blasONE, blasScalarZERO, forward_solution_Vector.data(),
-                        blasONE);
+                        numOfSpecies, temp.data(), blasONE, blasScalarZERO,
+                        forward_solution_Vector.data(), blasONE);
 
-        delete[] temp;
         return true;
     }
 
@@ -457,13 +409,11 @@ template <typename Scalar> class SensitivityEngine {
                 continue;
             }
             if (intermediateTAPE->orderDOWN) {
-                Scalar *d_kahan = new Scalar[4];
-                for (i = 0; i < 4; i++)
-                    d_kahan[i] = 0.0;
+                std::vector<Scalar> d_kahan(4, (Scalar)0.0);
                 Scalar y;
                 Scalar t;
 
-                Scalar *d_i = new Scalar[6];
+                std::vector<Scalar> d_i(6, (Scalar)0.0);
                 d_i[0] = 0.0;
                 d_i[1] = 0.0;
                 for (i = 2; i <= order_corrector_tape; i++)
@@ -480,17 +430,14 @@ template <typename Scalar> class SensitivityEngine {
                             d_i[j] = t;
                         }
                     }
-                Scalar *temp = new Scalar[numOfSpecies];
+                std::vector<Scalar> temp(numOfSpecies);
                 for (i = 0; i < numOfSpecies; i++)
                     temp[i] = z_corrector_tape[order_corrector_tape * numOfSpecies + i];
                 Scalar blasTEMP = -1.0;
-                linalg::GER(numOfSpecies, order_corrector_tape, blasTEMP, temp, blasONE, d_i,
-                            blasONE, z_corrector_tape.data(), numOfSpecies);
+                linalg::GER(numOfSpecies, order_corrector_tape, blasTEMP, temp.data(), blasONE,
+                            d_i.data(), blasONE, z_corrector_tape.data(), numOfSpecies);
 
                 order_corrector_tape -= 1;
-                delete[] d_kahan;
-                delete[] d_i;
-                delete[] temp;
                 intermediateTAPE = intermediateTAPE->forwardLINK;
                 continue;
             }
@@ -839,13 +786,11 @@ template <typename Scalar> class SensitivityEngine {
             cppAD_argument_size = numOfSpecies + 1 + sizeOfParameter;
 
         std::vector<Scalar> cppAD_argument(cppAD_argument_size);
-        Scalar *b = new Scalar[numOfSpecies];
-        Scalar *temp2 = new Scalar[numOfSpecies];
+        std::vector<Scalar> b(numOfSpecies);
+        std::vector<Scalar> temp2(numOfSpecies);
 
         if (!direct) {
-            Scalar *temp = new Scalar[numOfSpecies];
-            for (i = 0; i < numOfSpecies; i++)
-                temp[i] = 0;
+            std::vector<Scalar> temp(numOfSpecies, (Scalar)0.0);
             for (i = 0; i < intermediateTAPE->NewtonIterates; i++) {
                 std::vector<Scalar> rhs(numOfSpecies);
                 for (j = 0; j < numOfSpecies; j++)
@@ -871,39 +816,33 @@ template <typename Scalar> class SensitivityEngine {
                 Scalar blasTEMP1 = 1.0 / l_i_tape[1];
                 Scalar blasTEMP2 = -step_size_h_tape / l_i_tape[1];
 
-                linalg::SCAL(numOfSpecies, blasTEMP1, b, blasONE);
-                linalg::AXPY(numOfSpecies, blasTEMP2, temp2, blasONE, b, blasONE);
-                linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_tape.data(), blasONE, b,
-                             blasONE);
-                linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_tape.data(), blasONE, b,
-                             blasONE);
+                linalg::SCAL(numOfSpecies, blasTEMP1, b.data(), blasONE);
+                linalg::AXPY(numOfSpecies, blasTEMP2, temp2.data(), blasONE, b.data(), blasONE);
+                linalg::AXPY(numOfSpecies, blasScalarONE, correctorVector_tape.data(), blasONE,
+                             b.data(), blasONE);
+                linalg::AXPY(numOfSpecies, blasScalarMinusONE, z_predictor_tape.data(), blasONE,
+                             b.data(), blasONE);
                 for (j = 0; j < numOfSpecies; j++)
                     b[j] = -(Scalar)scalbn(b[j], scaling_D1_tape[j]);
 
                 linalg::GETRS_NT(numOfSpecies, blasONE, P_tape.data(), numOfSpecies, ip_tape.data(),
-                                 b, numOfSpecies);
+                                 b.data(), numOfSpecies);
 
                 for (j = 0; j < numOfSpecies; j++)
                     temp2[j] = (Scalar)scalbn(b[j], scaling_D2_tape[j]);
 
-                linalg::AXPY(numOfSpecies, blasScalarONE, temp2, blasONE,
+                linalg::AXPY(numOfSpecies, blasScalarONE, temp2.data(), blasONE,
                              correctorVector_tape.data(), blasONE);
-                linalg::AXPY(numOfSpecies, blasScalarONE, temp2, blasONE, temp, blasONE);
+                linalg::AXPY(numOfSpecies, blasScalarONE, temp2.data(), blasONE, temp.data(),
+                             blasONE);
             }
             for (i = 0; i < numOfSpecies; i++)
                 correctorVector_tape[i] = temp[i];
-            delete[] temp;
         } else {
             if (order != 0) {
                 std::vector<Scalar> df(numOfSpecies);
-                Scalar *P_ = new Scalar[numOfSpecies * numOfSpecies];
-                int *ip_ = new int[numOfSpecies];
-
-                // Free this block's factorisation on a hard failure.
-                auto releaseDirectForward = [&]() {
-                    delete[] P_;
-                    delete[] ip_;
-                };
+                std::vector<Scalar> P_(numOfSpecies * numOfSpecies);
+                std::vector<int> ip_(numOfSpecies);
                 if (intermediateTAPE->direct_fun == NULL) {
                     for (j = 0; j < numOfSpecies; j++)
                         cppAD_argument[j] = intermediateTAPE->endSolution[j];
@@ -938,7 +877,6 @@ template <typename Scalar> class SensitivityEngine {
                                     "element of jacobian is nan or inf! (direct sensitivities)");
 
                                 internalError = true;
-                                releaseDirectForward();
                                 return false;
                             }
                             J_[i * numOfSpecies + j] = df[i];
@@ -979,7 +917,6 @@ template <typename Scalar> class SensitivityEngine {
                                 ")!");
 
                             internalError = true;
-                            releaseDirectForward();
                             return false;
                         }
                         intermediateTAPE->scaling_D1[i] = (int)ceil(logb(sum));
@@ -992,11 +929,10 @@ template <typename Scalar> class SensitivityEngine {
 
                     // LU factor (and overwrite) the matrix P.data() and ip.data() and jp
                     int info;
-                    info = linalg::GETRF(numOfSpecies, numOfSpecies, P_, numOfSpecies, ip_);
+                    info = linalg::GETRF(numOfSpecies, numOfSpecies, P_.data(), numOfSpecies, ip_.data());
                     if (info != 0) {
                         YABI_LOG_ERROR("ERROR: LuFactor Failed! (dgetrf info=", info, ")");
                         internalError = true;
-                        releaseDirectForward();
                         return false;
                     }
 
@@ -1077,7 +1013,7 @@ template <typename Scalar> class SensitivityEngine {
                                              (z_predictor_tape[numOfSpecies + j] / l_i_tape[1]))),
                                            intermediateTAPE->scaling_D1[j]);
 
-                linalg::GETRS_NT(numOfSpecies, blasONE, P_, numOfSpecies, ip_, b, numOfSpecies);
+                linalg::GETRS_NT(numOfSpecies, blasONE, P_.data(), numOfSpecies, ip_.data(), b.data(), numOfSpecies);
 
                 for (i = 0; i < numOfSpecies; i++)
                     correctorVector_tape[i] =
@@ -1090,9 +1026,6 @@ template <typename Scalar> class SensitivityEngine {
                 intermediateTAPE->updatedTaylorFunction = false;
                 intermediateTAPE->lastTaylorOrder = order;
 
-                delete[] P_;
-                delete[] ip_;
-
             } else
                 for (i = 0; i < numOfSpecies; i++) {
                     correctorVector_tape[i] =
@@ -1100,33 +1033,30 @@ template <typename Scalar> class SensitivityEngine {
                 }
         }
 
-        delete[] b;
-        delete[] temp2;
-
         return true;
     }
 
     // --- simultaneous-derivative state (also consumed by Newton and step control) ---
-    Scalar **z_predictor_derivatives = nullptr;
-    Scalar **z_corrector_derivatives = nullptr;
-    Scalar **z_corrector_derivatives_old = nullptr;
-    Scalar **y_seed_derivatives = nullptr;
-    Scalar **p_seed_derivatives = nullptr;
+    std::vector<std::vector<Scalar>> z_predictor_derivatives;
+    std::vector<std::vector<Scalar>> z_corrector_derivatives;
+    std::vector<std::vector<Scalar>> z_corrector_derivatives_old;
+    Scalar **y_seed_derivatives = nullptr; // non-owning view of the caller's data
+    Scalar **p_seed_derivatives = nullptr; // non-owning view of the caller's data
     unsigned int numOfDerivatives = 0;
-    Scalar **corrector_derivatives = nullptr;
-    Scalar **corrector_old_derivatives = nullptr;
-    Scalar **error_weights_derivatives = nullptr;
-    Scalar **absolut_error_derivatives = nullptr;
-    Scalar *relative_error_derivatives = nullptr;
-    Scalar **solution_Vector_derivatives = nullptr;
+    std::vector<std::vector<Scalar>> corrector_derivatives;
+    std::vector<std::vector<Scalar>> corrector_old_derivatives;
+    std::vector<std::vector<Scalar>> error_weights_derivatives;
+    Scalar **absolut_error_derivatives = nullptr;      // non-owning view of the caller's data
+    Scalar *relative_error_derivatives = nullptr;      // non-owning view of the caller's data
+    std::vector<std::vector<Scalar>> solution_Vector_derivatives;
     std::vector<Scalar> reachableError_derivatives;
 
     // --- forward replay state ---
     std::vector<Scalar> initial_state;
     Scalar initial_time = 0.0;
-    Scalar l_i_tape[7] = {};
+    std::array<Scalar, 7> l_i_tape{};
     Scalar time_tape = 0.0;
-    Scalar stepSizeSet_tape[6] = {};
+    std::array<Scalar, 6> stepSizeSet_tape{};
     std::vector<Scalar> z_predictor_tape;
     std::vector<Scalar> z_corrector_tape;
     std::vector<Scalar> correctorVector_tape;
