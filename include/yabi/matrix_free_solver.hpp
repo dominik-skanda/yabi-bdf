@@ -59,6 +59,8 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         last_iterations_ = 0;
         last_converged_ = false;
         operator_applications_ = 0;
+        last_relative_tolerance_ = relative_tolerance_;
+        context_ = NewtonLinearizationContext<Scalar>();
         if (fallback_)
             fallback_->initialize(n);
         return true;
@@ -90,6 +92,40 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     // owned DenseLUSolver.
     void setDirectPreconditioner(std::unique_ptr<LinearSolver<Scalar>> solver) {
         direct_ = std::move(solver);
+    }
+
+    // User preconditioner (T32c).  Takes precedence over the built-in enum.
+    // The solver borrows the object; the caller owns it and must keep it alive
+    // for the lifetime of the solves.
+    void setUserPreconditioner(Preconditioner<Scalar> *preconditioner) override {
+        user_preconditioner_ = preconditioner;
+    }
+    Preconditioner<Scalar> *userPreconditioner() const {
+        return user_preconditioner_;
+    }
+
+    // True when the active configuration needs the assembled scaled CSC P.
+    // A user preconditioner's declaration wins; built-ins and the no-op
+    // preconditioner keep the historical assembled path (T32b behaviour).
+    bool requiresAssembledMatrix() const override {
+        return !user_preconditioner_ || user_preconditioner_->requiresAssembledMatrix();
+    }
+
+    void setForcingTerm(ForcingTerm<Scalar> forcing) override {
+        forcing_ = std::move(forcing);
+    }
+    bool hasForcingTerm() const override {
+        return static_cast<bool>(forcing_);
+    }
+    void setNewtonLinearizationContext(
+        const NewtonLinearizationContext<Scalar> &context) override {
+        context_ = context;
+    }
+
+    // Relative tolerance used by the most recent Krylov solve (fixed value or
+    // the forcing callback's result).
+    Scalar lastRelativeTolerance() const {
+        return last_relative_tolerance_;
     }
 
     void setTolerance(Scalar relative, Scalar absolute, unsigned int max_iterations,
@@ -153,9 +189,20 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     bool factorizeCsc(const CscMatrix<Scalar> &P, int *ipiv, long *scalingD1, long *scalingD2,
                       unsigned int n) override {
         n_ = n;
-        preconditioner_matrix_ = &P;
+        preconditioner_matrix_ = P.empty() ? nullptr : &P;
 
-        if (preconditioner_ == KrylovPreconditioner::Jacobi) {
+        if (user_preconditioner_) {
+            // The J-free path passes an empty matrix: no assembled diagonal is
+            // available.  A preconditioner that needs one is misconfigured.
+            if (user_preconditioner_->requiresAssembledMatrix() && !preconditioner_matrix_)
+                return false;
+            diagonal_.clear();
+            if (preconditioner_matrix_)
+                preconditioner_matrix_->extractDiagonal(diagonal_);
+            jacobi_valid_ = false;
+            if (!user_preconditioner_->update(preconditioner_matrix_, operator_, diagonal_, n))
+                return false;
+        } else if (preconditioner_ == KrylovPreconditioner::Jacobi) {
             buildJacobi(P);
         } else if (preconditioner_ == KrylovPreconditioner::Direct) {
             ensureDirect();
@@ -212,6 +259,10 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
                 // Robustness net: P is available as the scaled CSC matrix, so a
                 // failed/breakdown Krylov solve can still produce the correct
                 // Newton step.  The counter makes the fallback observable.
+                // The J-free path has no assembled matrix, so it reports
+                // failure instead of switching representations silently.
+                if (!preconditioner_matrix_)
+                    return -1;
                 ++fallbacks_;
                 ensureFallback();
                 fallback_->initialize(n);
@@ -251,6 +302,8 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     }
 
     bool applyPreconditioner(const Scalar *input, Scalar *output) {
+        if (user_preconditioner_)
+            return user_preconditioner_->apply(input, output);
         if (preconditioner_ == KrylovPreconditioner::Jacobi && jacobi_valid_) {
             for (unsigned int i = 0; i < n_; ++i)
                 output[i] = input[i] / diagonal_[i];
@@ -266,6 +319,19 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         return true;
     }
 
+    // Fixed tolerance unless an inexact-Newton forcing callback is installed.
+    // A callback result outside [0, 1] or non-finite is ignored.
+    Scalar selectRelativeTolerance() {
+        Scalar relative = relative_tolerance_;
+        if (forcing_) {
+            const Scalar eta = forcing_(context_);
+            if (std::isfinite(eta) && eta >= Scalar(0) && eta <= Scalar(1))
+                relative = eta;
+        }
+        last_relative_tolerance_ = relative;
+        return relative;
+    }
+
     bool gmres(const std::vector<Scalar> &b, std::vector<Scalar> &x, bool flexible) {
         const unsigned int n = n_;
         x.assign(n, Scalar(0));
@@ -273,7 +339,7 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         const Scalar bnorm = norm(b);
         if (!std::isfinite(bnorm))
             return false;
-        const Scalar tolerance = absolute_tolerance_ + relative_tolerance_ * bnorm;
+        const Scalar tolerance = absolute_tolerance_ + selectRelativeTolerance() * bnorm;
         if (bnorm <= tolerance) {
             last_iterations_ = 0;
             return true;
@@ -419,7 +485,7 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
         const Scalar bnorm = norm(b);
         if (!std::isfinite(bnorm))
             return false;
-        const Scalar tolerance = absolute_tolerance_ + relative_tolerance_ * bnorm;
+        const Scalar tolerance = absolute_tolerance_ + selectRelativeTolerance() * bnorm;
         if (bnorm <= tolerance) {
             last_iterations_ = 0;
             return true;
@@ -495,16 +561,7 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
     }
 
     void buildJacobi(const CscMatrix<Scalar> &P) {
-        diagonal_.assign(n_, Scalar(0));
-        for (unsigned int j = 0; j < n_; ++j) {
-            const int begin = P.col_ptr[j];
-            const int end = P.col_ptr[j + 1];
-            for (int k = begin; k < end; ++k)
-                if (P.row_idx[(std::size_t)k] == (int)j) {
-                    diagonal_[j] = P.val[(std::size_t)k];
-                    break;
-                }
-        }
+        P.extractDiagonal(diagonal_);
         jacobi_valid_ = true;
         for (unsigned int i = 0; i < n_; ++i)
             if (!std::isfinite(diagonal_[i]) || diagonal_[i] == Scalar(0))
@@ -539,6 +596,11 @@ template <typename Scalar> class KrylovSolverBase : public LinearSolver<Scalar> 
 
     std::unique_ptr<LinearSolver<Scalar>> fallback_;
     std::unique_ptr<LinearSolver<Scalar>> direct_;
+
+    Preconditioner<Scalar> *user_preconditioner_ = nullptr;
+    ForcingTerm<Scalar> forcing_;
+    NewtonLinearizationContext<Scalar> context_;
+    Scalar last_relative_tolerance_ = Scalar(1e-12);
 
     unsigned int last_iterations_ = 0;
     bool last_converged_ = false;

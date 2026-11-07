@@ -122,6 +122,18 @@ template <typename Scalar> struct CscMatrix {
         return (Scalar)0.0;
     }
 
+    // Diagonal in natural (column) order.  Missing structural diagonal entries
+    // are reported as zero, matching value(i, i).
+    void extractDiagonal(std::vector<Scalar> &diagonal) const {
+        diagonal.assign(n, (Scalar)0.0);
+        for (std::size_t j = 0; j < n; ++j)
+            for (int k = col_ptr[j]; k < col_ptr[j + 1]; ++k)
+                if ((std::size_t)row_idx[(std::size_t)k] == j) {
+                    diagonal[j] = val[(std::size_t)k];
+                    break;
+                }
+    }
+
     // D2 scales columns (as the historical Newton scaling does).
     void scaleColumns(const std::vector<long> &scaling_D2) {
         for (std::size_t j = 0; j < n; ++j)

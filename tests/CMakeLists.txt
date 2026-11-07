@@ -47,6 +47,8 @@ endif()
 # J*v, so the same matrix-free Newton solve must run in both configurations.
 yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/matrix_free_pure.cpp"
     "component;matrixfree;pure")
+yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/matrix_free_jfree.cpp"
+    "component;matrixfree;pure")
 
 # Native CSC + symbolic reuse requires both SuiteSparse solvers.  Registered
 # only when they are present, so the default build stays dependency-light.

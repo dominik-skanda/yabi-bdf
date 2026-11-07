@@ -122,6 +122,7 @@ template <typename Scalar> class NewtonSolver {
         Scalar blasScalarONE = (Scalar)1.0;
         Scalar blasScalarMinusONE = (Scalar)-1.0;
         Scalar minimalRate = 0.0;
+        Scalar previousNewtonResidual = 0.0;
         unsigned int i, j, k, l, z;
         bool wasJacobianSet = false;
         bool wasNewPSet = false;
@@ -156,13 +157,19 @@ template <typename Scalar> class NewtonSolver {
         // build/scale the preconditioner; J acts on vectors through the
         // MatrixFreeOperator, never as a stored dense matrix.
         const bool matrixFreeRequested = matrixFreePathAvailable();
+        const bool matrixFreeWithoutAssembly =
+            matrixFreeRequested && linearSolver && !linearSolver->requiresAssembledMatrix();
         const bool sparseRequested = !matrixFreeRequested && sparsePathAvailable();
-        const bool needSparsePattern = matrixFreeRequested || sparseRequested;
+        const bool needSparsePattern =
+            !matrixFreeWithoutAssembly && (matrixFreeRequested || sparseRequested);
         const bool sparsePatternReadyForSolve = !needSparsePattern || prepareSparsePattern();
-        const bool useMatrixFree = matrixFreeRequested && sparsePatternReadyForSolve;
+        const bool useMatrixFree =
+            matrixFreeRequested && (matrixFreeWithoutAssembly || sparsePatternReadyForSolve);
+        const bool useJFree = useMatrixFree && matrixFreeWithoutAssembly;
         const bool useSparse = sparseRequested && sparsePatternReadyForSolve;
-        const bool useSparseAssembly = useSparse || useMatrixFree;
-        if (matrixFreeRequested && !sparsePatternReadyForSolve && !matrixFreeWarned) {
+        const bool useSparseAssembly = useSparse || (useMatrixFree && !useJFree);
+        if (matrixFreeRequested && !matrixFreeWithoutAssembly && !sparsePatternReadyForSolve &&
+            !matrixFreeWarned) {
             matrixFreeWarned = true;
             YABI_LOG_WARN("matrix-free solver installed but the right-hand side exposes no Jacobian "
                           "sparsity pattern; using the dense explicit path");
@@ -311,6 +318,13 @@ template <typename Scalar> class NewtonSolver {
                         releaseWorkspace();
                         return false;
                     }
+                } else if (useJFree) {
+                    if (!configureJFreeMatrix(cppAD_argument)) {
+                        YABI_LOG_ERROR("ERROR: J-free matrix-free setup failed!");
+                        internalError = true;
+                        releaseWorkspace();
+                        return false;
+                    }
                 } else {
                     std::vector<Scalar> dx(cppAD_argument_size);
                     std::vector<Scalar> df(numOfSpecies);
@@ -420,6 +434,13 @@ template <typename Scalar> class NewtonSolver {
                         releaseWorkspace();
                         return false;
                     }
+                } else if (useJFree) {
+                    if (!configureJFreeMatrix(matrixFreeBase)) {
+                        YABI_LOG_ERROR("ERROR: J-free matrix-free setup failed!");
+                        internalError = true;
+                        releaseWorkspace();
+                        return false;
+                    }
                 } else {
                     for (j = 0; j < numOfSpecies; j++)
                         for (k = 0; k < numOfSpecies; k++)
@@ -522,10 +543,22 @@ template <typename Scalar> class NewtonSolver {
             linalg::AXPY(numOfSpecies, blasTEMP2, temp, 1, b, 1);
             linalg::AXPY(numOfSpecies, blasScalarONE, root, 1, b, 1);
             linalg::AXPY(numOfSpecies, blasScalarMinusONE, nordsieck.z_predictor.data(), 1, b, 1);
+            const Scalar newtonResidual =
+                linalg::NRM2(numOfSpecies, b, 1) / (Scalar)numOfSpecies;
             for (j = 0; j < numOfSpecies; j++)
                 b[j] = -(Scalar)scalbn(b[j], scaling_D1[j]);
 
-            if (useSparseAssembly) {
+            if (linearSolver) {
+                NewtonLinearizationContext<Scalar> linearization;
+                linearization.iteration = newtonIterate;
+                linearization.residual = newtonResidual;
+                linearization.previous_residual = previousNewtonResidual;
+                linearization.nonlinear_tolerance =
+                    error_multiplier * config.NEWTON_CONVERGED * relative_error;
+                linearSolver->setNewtonLinearizationContext(linearization);
+            }
+
+            if (useSparseAssembly || useJFree) {
                 sign = linearSolver->solveCsc(P_csc, ip.data(), scaling_D1.data(),
                                               scaling_D2.data(), b, numOfSpecies, 1);
             } else if (linearSolver) {
@@ -542,6 +575,7 @@ template <typename Scalar> class NewtonSolver {
                 releaseWorkspace();
                 return false;
             }
+            previousNewtonResidual = newtonResidual;
 
             for (j = 0; j < numOfSpecies; j++)
                 temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
@@ -1752,6 +1786,67 @@ template <typename Scalar> class NewtonSolver {
         P_csc.scaleRows(scaling_D1);
 
         return true;
+    }
+
+    // J-free variant of the scaling above: no CSC J/P exists, so the D1 row
+    // sums are estimated with one J*v product in direction 2^D2.  The
+    // assembled path sums |P_ij|; this uses |sum_j P_ij 2^D2_j|.  The two
+    // scalings can differ, but both are valid Newton scalings and the
+    // converged root is unchanged.  This only runs when a user preconditioner
+    // explicitly declares requiresAssembledMatrix() == false.
+    bool calculateNewtonScalingJFree() {
+        unsigned int i, j;
+        for (j = 0; j < numOfSpecies; j++) {
+            if (!(error_weights[j] > 0.0) || !std::isfinite(error_weights[j])) {
+                YABI_LOG_ERROR("ERROR: non-positive or non-finite error weight for species ", j,
+                               " (", error_weights[j], ")!");
+
+                internalError = true;
+                return false;
+            }
+            scaling_D2[j] = (long)std::floor(std::logb(error_weights[j]) + 0.5);
+        }
+
+        const std::size_t domain = RHS->Domain();
+        std::vector<Scalar> direction(domain, Scalar(0));
+        for (j = 0; j < numOfSpecies; ++j)
+            direction[j] = (Scalar)std::scalbn((Scalar)1.0, (int)scaling_D2[j]);
+
+        std::vector<Scalar> Jd;
+        if (!RHS->jacobianVectorProduct(matrixFreeBase, direction, Jd) ||
+            Jd.size() < numOfSpecies) {
+            YABI_LOG_ERROR("ERROR: J-free Newton scaling needs a Jacobian-vector product!");
+            internalError = true;
+            return false;
+        }
+
+        const Scalar factor = nordsieck.step_size_h / nordsieck.l_i[1];
+        for (i = 0; i < numOfSpecies; i++) {
+            const Scalar sum =
+                std::fabs((Scalar)std::scalbn((Scalar)1.0, (int)scaling_D2[i]) - factor * Jd[i]);
+            if (!(sum > 0.0) || !std::isfinite(sum)) {
+                YABI_LOG_ERROR("ERROR: cannot scale column ", i,
+                               " of the J-free Newton matrix (row sum ", sum, ")!");
+
+                internalError = true;
+                return false;
+            }
+            scaling_D1[i] = (long)-(int)std::ceil(std::logb(sum));
+        }
+
+        return true;
+    }
+
+    bool configureJFreeMatrix(const std::vector<Scalar> &base) {
+        matrixFreeBase = base;
+        configureMatrixFreeOperator();
+        if (!calculateNewtonScalingJFree())
+            return false;
+        // The user preconditioner declared that it does not need an assembled
+        // matrix; the empty temporary is not retained by the solver.
+        CscMatrix<Scalar> no_matrix;
+        return linearSolver->factorizeCsc(no_matrix, ip.data(), scaling_D1.data(),
+                                          scaling_D2.data(), numOfSpecies);
     }
 
     NordsieckState<Scalar> &nordsieck;
