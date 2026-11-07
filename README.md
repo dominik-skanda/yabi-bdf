@@ -284,6 +284,19 @@ sensitivity `∂g/∂p` is accumulated with an augmented backward state (the `μ
 accumulator), and the pure backend supports time- and parameter-dependent RHS
 via `setTimeDerivative`/`setParameterDerivative`.
 
+The **second-order** continuous adjoint is `secondOrderAdjoint` — it returns the
+Hessian-vector product `H g · s` of `g = wᵀ y(t_end)` in a seed direction `s`,
+stably for long/stiff problems (the stable complement to `reverse(2)`):
+
+```cpp
+double weights[2] = {1.0, 0.0}, direction[2] = {1.0, 0.0}, hessian[2];
+integrator.secondOrderAdjoint(weights, direction, hessian);
+// hessian[i] = sum_j d^2 g / d y0_i d y0_j * direction[j]
+```
+
+It needs a Hessian-in-direction hook: CppAD provides it via a `Reverse(2)`
+sweep automatically; the pure backend adds `setHessianVectorProduct(hv)`.
+
 ### Simultaneous (variational) sensitivities
 
 Pass seed directions and error controls directly to `resetIntegration`:

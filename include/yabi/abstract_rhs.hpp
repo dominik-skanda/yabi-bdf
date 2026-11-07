@@ -83,6 +83,22 @@ template <typename Scalar> class AbstractRHS {
         return false;
     }
 
+    // Second-order adjoint product: the Hessian of the scalar lambda^T f(x)
+    // with respect to the *state* block, contracted with the direction v.  Used
+    // by the second-order continuous adjoint (T26).  x is the full Domain()
+    // argument, lambda and v have Range() entries, result has Range() entries.
+    // Backends that cannot form it (no tape, no analytic Hessian hook) return
+    // false.
+    virtual bool hessianVectorProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                                      const std::vector<Scalar> &v,
+                                      std::vector<Scalar> &result) const {
+        (void)x;
+        (void)lambda;
+        (void)v;
+        (void)result;
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

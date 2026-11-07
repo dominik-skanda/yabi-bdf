@@ -119,6 +119,12 @@ template <class Scalar> class BDFIntegrator {
     // run to t_ende first.  adjoint_parameter may be null (then only the state
     // adjoint is computed).
     bool continuousAdjoint(Scalar *seed_weights, Scalar *adjoint_y0, Scalar *adjoint_parameter);
+    // Second-order *continuous* adjoint (T26): the Hessian-vector product of
+    // g = sum_i seed_weights[i] y_i(t_end) with the direction seed_direction,
+    // computed stably for long/stiff problems (the stable complement to the
+    // discrete-adjoint reverse(2)).  Requires performIntegration to have run
+    // and the backend to provide a Hessian-in-direction hook (hessianVectorProduct).
+    bool secondOrderAdjoint(Scalar *seed_weights, Scalar *seed_direction, Scalar *hessian_y0);
     bool setStepSettings(Scalar NEWTON_STEP_REDUCTION, Scalar STEP_NOT_ACCEPTED_REDUCTION,
                          Scalar STEP_NOT_ACCEPTED_SAVETY_STEP, Scalar ORDER_STAY_SAVETY_STEP,
                          Scalar ORDER_UP_SAVETY_STEP, Scalar ORDER_DOWN_SAVETY_STEP,

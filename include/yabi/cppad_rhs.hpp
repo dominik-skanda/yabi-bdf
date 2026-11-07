@@ -98,6 +98,40 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    bool hessianVectorProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                              const std::vector<Scalar> &v,
+                              std::vector<Scalar> &result) const override {
+        if (x.size() != fun_->Domain() || lambda.size() != fun_->Range() ||
+            v.size() != fun_->Range())
+            return false;
+        const std::size_t D = fun_->Domain();
+        const std::size_t n = fun_->Range();
+
+        // Hess(lambda^T f) * v via the sequential second-order Taylor sweep and
+        // a single Reverse(2) — avoids forming the full n x n Hessian.
+        fun_->capacity_order(2);
+        CppAD::vector<Scalar> xv(D);
+        for (std::size_t i = 0; i < D; ++i)
+            xv[i] = x[i];
+        fun_->Forward(0, xv); // set the point
+        CppAD::vector<Scalar> x1(D, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            x1[i] = v[i]; // tangent x^(1) = v on the state block
+        fun_->Forward(1, x1);
+        fun_->Forward(2, CppAD::vector<Scalar>(D, Scalar(0))); // x^(2) = 0
+
+        // w[i*q + k], q = 2: weight the order-1 coefficients with lambda.
+        CppAD::vector<Scalar> w(2 * n, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            w[2 * i + 1] = lambda[i];
+        CppAD::vector<Scalar> dw = fun_->Reverse(2, w); // 2*D entries
+
+        result.assign(n, Scalar(0));
+        for (std::size_t j = 0; j < n; ++j)
+            result[j] = dw[2 * j]; // order-0 adjoint = Hess(lambda^T f) * v
+        return true;
+    }
+
     bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
                        std::vector<Scalar> &y) const override {
         if (x.size() != fun_->Domain() * (p + 1))

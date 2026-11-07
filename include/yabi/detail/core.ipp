@@ -732,6 +732,71 @@ bool BDFIntegrator<Scalar>::continuousAdjoint(Scalar *seed_weights, Scalar *adjo
     return true;
 }
 
+// Second-order continuous adjoint (T26): the Hessian-vector product H g * s.
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::secondOrderAdjoint(Scalar *seed_weights, Scalar *seed_direction,
+                                               Scalar *hessian_y0) {
+    if (!isIntegrattionPerformed) {
+        YABI_LOG_ERROR("second-order adjoint: run performIntegration first!");
+        return false;
+    }
+    if (trajectory_.empty()) {
+        YABI_LOG_ERROR("second-order adjoint: no forward trajectory recorded!");
+        return false;
+    }
+
+    // 1. Integrate the forward tangent ydot' = J(y) ydot, ydot(0) = s, and
+    //    record its trajectory.
+    detail::TangentRHS<Scalar> tanRHS(*RHS, trajectory_, numOfSpecies, t_ende, parameter);
+    std::vector<Scalar> ydot0(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        ydot0[i] = seed_direction[i];
+    std::vector<Scalar> abs_err(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        abs_err[i] = absolut_error[i];
+
+    BDFIntegrator<Scalar> tangent(tanRHS);
+    if (!tangent.resetIntegration(ydot0.data(), 0.0, NULL, max_StepLength, relative_error,
+                                  abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!tangent.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("second-order adjoint: tangent integration failed!");
+        return false;
+    }
+
+    // 2. Integrate the augmented second-order adjoint (lambda, gamma) backward:
+    //      d lambda/d tau = J^T lambda,   lambda(T) = w
+    //      d gamma /d tau = J^T gamma + Hess(lambda^T f) ydot,  gamma(T) = 0
+    //    so gamma(0) = H g * s.
+    detail::SecondOrderAdjointRHS<Scalar> adjRHS(*RHS, trajectory_, tangent.trajectory_,
+                                                 numOfSpecies, t_ende, parameter);
+    std::vector<Scalar> lam0(2 * numOfSpecies, (Scalar)0.0);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        lam0[i] = seed_weights[i]; // lambda(T) = w; gamma(T) = 0 (already zeroed)
+    std::vector<Scalar> abs_err2(2 * numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++) {
+        abs_err2[i] = absolut_error[i];
+        abs_err2[numOfSpecies + i] = absolut_error[0];
+    }
+
+    BDFIntegrator<Scalar> adj(adjRHS);
+    if (!adj.resetIntegration(lam0.data(), 0.0, NULL, max_StepLength, relative_error,
+                              abs_err2.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!adj.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("second-order adjoint: backward integration failed!");
+        return false;
+    }
+
+    std::vector<Scalar> sol(2 * numOfSpecies);
+    adj.getSolutionVector(sol.data());
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        hessian_y0[i] = sol[numOfSpecies + i]; // gamma(0) = H g * s
+
+    return true;
+}
+
 // Integrator Configuration
 
 template <typename Scalar>

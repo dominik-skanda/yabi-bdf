@@ -44,6 +44,10 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     using TimeDeriv = std::function<void(const Scalar *y, Scalar *ft)>;    // n, df/dt(y)
     using ParamDeriv =
         std::function<void(const Scalar *y, Scalar *fp)>; // n*n_param, column-major df/dp
+    // Hessian of lambda^T f (state block) times direction v:
+    //   result[i] = sum_{j,k} d^2(lambda^T f)/dy_i dy_j dy_k * v[j] ... = Hess(lambda^T f) * v.
+    using HessianVector = std::function<void(const Scalar *y, const Scalar *lambda,
+                                             const Scalar *v, Scalar *result)>; // n entries
 
     UserODERHS(std::size_t n, ODE f, Jacobian jac) : n_(n), f_(std::move(f)), jac_(std::move(jac)) {}
 
@@ -62,6 +66,13 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     UserODERHS &setParameterDerivative(std::size_t n_param, ParamDeriv fp) {
         n_param_ = n_param;
         fp_ = std::move(fp);
+        return *this;
+    }
+
+    // Optional analytic Hessian-in-direction hook for the second-order
+    // continuous adjoint (T26): Hess(lambda^T f) * v, n entries.
+    UserODERHS &setHessianVectorProduct(HessianVector hv) {
+        hv_ = std::move(hv);
         return *this;
     }
 
@@ -165,6 +176,17 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    // Hess(lambda^T f) * v via the analytic hook.
+    bool hessianVectorProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                              const std::vector<Scalar> &v,
+                              std::vector<Scalar> &result) const override {
+        if (!hv_ || x.size() != Domain() || lambda.size() != n_ || v.size() != n_)
+            return false;
+        result.assign(n_, Scalar(0));
+        hv_(x.data(), lambda.data(), v.data(), result.data());
+        return true;
+    }
+
     std::size_t size_order() const override { return 1; }
     void capacity_order(std::size_t) override {}
 
@@ -177,6 +199,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         copy->has_time_ = has_time_;
         copy->fp_ = fp_;
         copy->n_param_ = n_param_;
+        copy->hv_ = hv_;
         return copy;
     }
 
@@ -274,6 +297,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     bool has_time_ = false;
     ParamDeriv fp_;
     std::size_t n_param_ = 0;
+    HessianVector hv_;
     mutable std::vector<Scalar> point_; // last Forward(0) argument (stateful point)
 };
 

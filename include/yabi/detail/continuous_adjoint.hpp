@@ -8,6 +8,7 @@
 #ifndef YABI_DETAIL_CONTINUOUS_ADJOINT_HPP
 #define YABI_DETAIL_CONTINUOUS_ADJOINT_HPP
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -49,25 +50,29 @@ template <typename Scalar> class Trajectory {
     // Evaluate y(t) (n components) at the state time t.  Returns false if t is
     // outside the recorded interval.
     bool interpolate(Scalar t, Scalar *y, std::size_t n) const {
-        // Steps are recorded in ascending time order; scan backwards so the
-        // earliest step covering t is found (steps may abut at a shared node).
-        for (auto it = steps_.rbegin(); it != steps_.rend(); ++it) {
-            const TrajectoryStep<Scalar> &s = *it;
-            if (t <= s.t_right && t >= s.t_right - s.h) {
-                const Scalar theta = (t - s.t_right) / s.h;
-                for (std::size_t i = 0; i < n; ++i) {
-                    Scalar acc = 0;
-                    Scalar p = 1; // theta^j
-                    for (unsigned int j = 0; j <= s.order; ++j) {
-                        acc += s.z[n * j + i] * p;
-                        p *= theta;
-                    }
-                    y[i] = acc;
-                }
-                return true;
+        // Steps are recorded in ascending t_right order, so locate the interval
+        // [t_right - h, t_right] containing t with a binary search (O(log n)
+        // instead of a linear backward scan).
+        auto it = std::lower_bound(steps_.begin(), steps_.end(), t,
+                                   [](const TrajectoryStep<Scalar> &s, Scalar val) {
+                                       return s.t_right < val;
+                                   });
+        if (it == steps_.end())
+            --it; // t is at/after the last step's right edge
+        const TrajectoryStep<Scalar> &s = *it;
+        if (t > s.t_right || t < s.t_right - s.h)
+            return false;
+        const Scalar theta = (t - s.t_right) / s.h;
+        for (std::size_t i = 0; i < n; ++i) {
+            Scalar acc = 0;
+            Scalar p = 1; // theta^j
+            for (unsigned int j = 0; j <= s.order; ++j) {
+                acc += s.z[n * j + i] * p;
+                p *= theta;
             }
+            y[i] = acc;
         }
-        return false;
+        return true;
     }
 
   private:
@@ -154,6 +159,132 @@ template <typename Scalar> class ContinuousAdjointRHS : public AbstractRHS<Scala
     Trajectory<Scalar> trajectory_;
     std::size_t n_;
     std::size_t p_;
+    Scalar T_;
+    std::vector<Scalar> parameter_;
+};
+
+// The tangent ODE as a time-dependent AbstractRHS, so the existing BDF can
+// integrate the forward tangent ydot' = J(y(t)) ydot (needed by the second-order
+// continuous adjoint).  The state y(t) is looked up from a recorded Trajectory;
+// J(y) ydot is the forward directional derivative Forward(1, ydot).
+template <typename Scalar> class TangentRHS : public AbstractRHS<Scalar> {
+  public:
+    TangentRHS(const AbstractRHS<Scalar> &base, const Trajectory<Scalar> &trajectory,
+               std::size_t n, Scalar T, const std::vector<Scalar> &parameter)
+        : base_(base.clone()), trajectory_(trajectory), n_(n), T_(T), parameter_(parameter) {
+        (void)T_; // the tangent integrates in *forward* time, so T is unused
+    }
+
+    std::size_t Domain() const override { return n_ + 1; } // (ydot, t)
+    std::size_t Range() const override { return n_; }
+
+    std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
+        (void)p; // linear in ydot, so Forward(0) and Forward(1) coincide
+        const Scalar t = x[n_];
+        std::vector<Scalar> y(n_);
+        trajectory_.interpolate(t, y.data(), n_);
+
+        std::vector<Scalar> arg(base_->Domain());
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < n_; ++i)
+            arg[k++] = y[i];
+        if (k < base_->Domain())
+            arg[k++] = t;
+        for (std::size_t i = 0; i < parameter_.size(); ++i)
+            arg[k++] = parameter_[i];
+
+        base_->Forward(0, arg);
+        std::vector<Scalar> dx(base_->Domain(), Scalar(0));
+        for (std::size_t i = 0; i < n_; ++i)
+            dx[i] = x[i]; // state direction = ydot
+        return base_->Forward(1, dx); // J(y) * ydot
+    }
+
+    std::vector<Scalar> Reverse(std::size_t, const std::vector<Scalar> &) const override {
+        return {};
+    }
+    std::size_t size_order() const override { return 1; }
+    void capacity_order(std::size_t) override {}
+    AbstractRHS<Scalar> *clone() const override {
+        return new TangentRHS(*base_, trajectory_, n_, T_, parameter_);
+    }
+
+  private:
+    std::unique_ptr<AbstractRHS<Scalar>> base_;
+    Trajectory<Scalar> trajectory_;
+    std::size_t n_;
+    Scalar T_;
+    std::vector<Scalar> parameter_;
+};
+
+// The second-order continuous adjoint as a time-dependent AbstractRHS.  In
+// reversed time tau it integrates the augmented pair
+//   d lambda/d tau = J^T lambda
+//   d gamma /d tau = J^T gamma + Hess(lambda^T f) * ydot
+// with gamma(T) = 0, so gamma(0) = H g * s (the Hessian-vector product).  Both
+// y(T-tau) and the tangent ydot(T-tau) come from recorded Trajectories; J^T is
+// AbstractRHS::adjointProduct and the Hessian term is hessianVectorProduct.
+template <typename Scalar> class SecondOrderAdjointRHS : public AbstractRHS<Scalar> {
+  public:
+    SecondOrderAdjointRHS(const AbstractRHS<Scalar> &base, const Trajectory<Scalar> &trajectory,
+                          const Trajectory<Scalar> &tangent_trajectory, std::size_t n, Scalar T,
+                          const std::vector<Scalar> &parameter)
+        : base_(base.clone()), trajectory_(trajectory), tangent_(tangent_trajectory), n_(n),
+          T_(T), parameter_(parameter) {}
+
+    std::size_t Domain() const override { return 2 * n_ + 1; } // (lambda, gamma, tau)
+    std::size_t Range() const override { return 2 * n_; }
+
+    std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
+        (void)p; // linear in (lambda, gamma)
+        const Scalar tau = x[2 * n_];
+        const Scalar t = T_ - tau;
+
+        std::vector<Scalar> y(n_), yd(n_);
+        trajectory_.interpolate(t, y.data(), n_);
+        tangent_.interpolate(t, yd.data(), n_);
+
+        std::vector<Scalar> arg(base_->Domain());
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < n_; ++i)
+            arg[k++] = y[i];
+        if (k < base_->Domain())
+            arg[k++] = t;
+        for (std::size_t i = 0; i < parameter_.size(); ++i)
+            arg[k++] = parameter_[i];
+
+        std::vector<Scalar> dir_lam(x.begin(), x.begin() + n_);
+        std::vector<Scalar> dir_gam(x.begin() + n_, x.begin() + 2 * n_);
+
+        std::vector<Scalar> Jt_lam, Jt_gam, Hv;
+        if (!base_->adjointProduct(arg, dir_lam, Jt_lam) ||
+            !base_->adjointProduct(arg, dir_gam, Jt_gam) ||
+            !base_->hessianVectorProduct(arg, dir_lam, yd, Hv)) {
+            throw std::runtime_error("SecondOrderAdjointRHS: Hessian/adjointhook unsupported");
+        }
+
+        std::vector<Scalar> out(2 * n_);
+        for (std::size_t i = 0; i < n_; ++i) {
+            out[i] = Jt_lam[i];        // d lambda/d tau
+            out[n_ + i] = Jt_gam[i] + Hv[i]; // d gamma/d tau
+        }
+        return out;
+    }
+
+    std::vector<Scalar> Reverse(std::size_t, const std::vector<Scalar> &) const override {
+        return {};
+    }
+    std::size_t size_order() const override { return 1; }
+    void capacity_order(std::size_t) override {}
+    AbstractRHS<Scalar> *clone() const override {
+        return new SecondOrderAdjointRHS(*base_, trajectory_, tangent_, n_, T_, parameter_);
+    }
+
+  private:
+    std::unique_ptr<AbstractRHS<Scalar>> base_;
+    Trajectory<Scalar> trajectory_;
+    Trajectory<Scalar> tangent_;
+    std::size_t n_;
     Scalar T_;
     std::vector<Scalar> parameter_;
 };
