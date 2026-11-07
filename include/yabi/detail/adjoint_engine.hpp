@@ -798,7 +798,7 @@ template <typename Scalar> class AdjointEngine {
 
         // (RAII: all workspace vectors above clean themselves up on return.)
 
-        // T26 guard: same as forward — the taping replay is unstable for high-order BDF
+        // T24 guard: same as forward — the taping replay is unstable for high-order BDF
         // over long stiff intervals. Fail loudly instead of returning a diverged value.
         for (i = 0; i < numOfSpecies; i++)
             for (j = 0; j < stored_adjoint_order; j++)

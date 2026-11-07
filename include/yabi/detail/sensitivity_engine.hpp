@@ -444,7 +444,7 @@ template <typename Scalar> class SensitivityEngine {
 
             if (intermediateTAPE->calculate_output == true) {
                 calculate_output_vector_forward();
-                // T26 guard: the taping replay is unstable for high-order BDF over long stiff
+                // T24 guard: the taping replay is unstable for high-order BDF over long stiff
                 // intervals (HIRES t=321.812 blows up ~1e+100 vs the correct ~1e-3). Fail loudly
                 // instead of returning a value ~100 orders of magnitude off — the simultaneous
                 // (variational) sensitivity is the stable path.
