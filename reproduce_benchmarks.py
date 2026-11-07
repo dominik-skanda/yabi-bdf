@@ -68,14 +68,14 @@ def run_tolerance_test():
         print(f"  {slope}")
 
 
-def run_second_order_sensitivities():
+def run_higher_order_sensitivities():
     print("\n====================================================")
-    print("2. RUNNING SECOND-ORDER SENSITIVITY CHECK (28)")
+    print("2. RUNNING HIGHER-ORDER SENSITIVITY CHECK (28)")
     print("====================================================")
     
     try:
         result = subprocess.run(['build/tests/yabi_test_28_second_order_sensitivity'], capture_output=True, text=True, check=True)
-        print("--- Second-Order Sensitivity Terminal Output ---")
+        print("--- Higher-Order Sensitivity Terminal Output ---")
         print(result.stdout.strip())
         print("-------------------------------------------------")
     except Exception as e:
@@ -84,5 +84,5 @@ def run_second_order_sensitivities():
 
 if __name__ == "__main__":
     run_tolerance_test()
-    run_second_order_sensitivities()
+    run_higher_order_sensitivities()
 
