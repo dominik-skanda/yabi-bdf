@@ -99,6 +99,18 @@ template <typename Scalar> class AbstractRHS {
         return false;
     }
 
+    // Second-order directional derivative of the *vector* RHS: H(x) · v · v,
+    // i.e. result[i] = sum_{j,k} d^2 f_i / dy_j dy_k * v_j * v_k.  Used by the
+    // second-order simultaneous/forward sensitivity (T27).  Backends that cannot
+    // form it (no tape, no analytic Hessian hook) return false.
+    virtual bool secondOrderDirectional(const std::vector<Scalar> &x, const std::vector<Scalar> &v,
+                                        std::vector<Scalar> &result) const {
+        (void)x;
+        (void)v;
+        (void)result;
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

@@ -297,6 +297,20 @@ integrator.secondOrderAdjoint(weights, direction, hessian);
 It needs a Hessian-in-direction hook: CppAD provides it via a `Reverse(2)`
 sweep automatically; the pure backend adds `setHessianVectorProduct(hv)`.
 
+The **second-order forward** is `secondOrderForward` — it returns the
+second-order directional derivative `d²y/dτ²` in a seed direction, stably for
+long/stiff problems (the stable complement to `forward(2)`):
+
+```cpp
+double direction[2] = {1.0, 0.0}, second[2];
+integrator.secondOrderForward(direction, second);
+// second[i] = d^2 y_i / d tau^2  along `direction`
+```
+
+It needs a second-order directional-derivative hook: CppAD provides it via a
+`Forward(2)` sweep automatically; the pure backend adds
+`setSecondOrderDirectional(sod)`.
+
 ### Simultaneous (variational) sensitivities
 
 Pass seed directions and error controls directly to `resetIntegration`:

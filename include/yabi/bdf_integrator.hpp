@@ -125,6 +125,12 @@ template <class Scalar> class BDFIntegrator {
     // discrete-adjoint reverse(2)).  Requires performIntegration to have run
     // and the backend to provide a Hessian-in-direction hook (hessianVectorProduct).
     bool secondOrderAdjoint(Scalar *seed_weights, Scalar *seed_direction, Scalar *hessian_y0);
+    // Second-order *forward* sensitivity (T27): d^2 y / d tau^2 in the seed
+    // direction, computed stably for long/stiff problems (the stable complement
+    // to forward(2), which is A-stability-bound).  Requires performIntegration
+    // to have run and the backend to provide a second-order directional
+    // derivative hook (secondOrderDirectional).
+    bool secondOrderForward(Scalar *seed_direction, Scalar *second_derivative);
     bool setStepSettings(Scalar NEWTON_STEP_REDUCTION, Scalar STEP_NOT_ACCEPTED_REDUCTION,
                          Scalar STEP_NOT_ACCEPTED_SAVETY_STEP, Scalar ORDER_STAY_SAVETY_STEP,
                          Scalar ORDER_UP_SAVETY_STEP, Scalar ORDER_DOWN_SAVETY_STEP,

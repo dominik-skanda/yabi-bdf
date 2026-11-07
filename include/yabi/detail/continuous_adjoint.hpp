@@ -289,6 +289,71 @@ template <typename Scalar> class SecondOrderAdjointRHS : public AbstractRHS<Scal
     std::vector<Scalar> parameter_;
 };
 
+// The second-order tangent ODE as a time-dependent AbstractRHS, so the existing
+// BDF integrates S2' = J(y) S2 + H(y) S S forward (S is the first-order tangent
+// looked up from a recorded Trajectory, H S S via secondOrderDirectional).
+template <typename Scalar> class SecondOrderTangentRHS : public AbstractRHS<Scalar> {
+  public:
+    SecondOrderTangentRHS(const AbstractRHS<Scalar> &base, const Trajectory<Scalar> &trajectory,
+                          const Trajectory<Scalar> &tangent_trajectory, std::size_t n, Scalar T,
+                          const std::vector<Scalar> &parameter)
+        : base_(base.clone()), trajectory_(trajectory), tangent_(tangent_trajectory), n_(n),
+          T_(T), parameter_(parameter) {
+        (void)T_; // forward time
+    }
+
+    std::size_t Domain() const override { return n_ + 1; } // (S2, t)
+    std::size_t Range() const override { return n_; }
+
+    std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
+        const Scalar t = x[n_];
+        std::vector<Scalar> y(n_), s(n_);
+        trajectory_.interpolate(t, y.data(), n_);
+        tangent_.interpolate(t, s.data(), n_);
+
+        std::vector<Scalar> arg(base_->Domain());
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < n_; ++i)
+            arg[k++] = y[i];
+        if (k < base_->Domain())
+            arg[k++] = t;
+        for (std::size_t i = 0; i < parameter_.size(); ++i)
+            arg[k++] = parameter_[i];
+
+        base_->Forward(0, arg);
+        std::vector<Scalar> dx(base_->Domain(), Scalar(0));
+        for (std::size_t i = 0; i < n_; ++i)
+            dx[i] = x[i]; // state direction = S2 (or dS2)
+        std::vector<Scalar> Jx = base_->Forward(1, dx); // J * S2
+
+        if (p == 0) {
+            std::vector<Scalar> HSS;
+            if (!base_->secondOrderDirectional(arg, s, HSS))
+                throw std::runtime_error("SecondOrderTangentRHS: secondOrderDirectional unsupported");
+            for (std::size_t i = 0; i < n_; ++i)
+                Jx[i] += HSS[i]; // S2' = J S2 + H S S
+        }
+        return Jx;
+    }
+
+    std::vector<Scalar> Reverse(std::size_t, const std::vector<Scalar> &) const override {
+        return {};
+    }
+    std::size_t size_order() const override { return 1; }
+    void capacity_order(std::size_t) override {}
+    AbstractRHS<Scalar> *clone() const override {
+        return new SecondOrderTangentRHS(*base_, trajectory_, tangent_, n_, T_, parameter_);
+    }
+
+  private:
+    std::unique_ptr<AbstractRHS<Scalar>> base_;
+    Trajectory<Scalar> trajectory_;
+    Trajectory<Scalar> tangent_;
+    std::size_t n_;
+    Scalar T_;
+    std::vector<Scalar> parameter_;
+};
+
 } // namespace detail
 } // namespace yabi
 

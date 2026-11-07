@@ -48,6 +48,8 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     //   result[i] = sum_{j,k} d^2(lambda^T f)/dy_i dy_j dy_k * v[j] ... = Hess(lambda^T f) * v.
     using HessianVector = std::function<void(const Scalar *y, const Scalar *lambda,
                                              const Scalar *v, Scalar *result)>; // n entries
+    // Second-order directional derivative of the vector RHS: H(y) * v * v, n entries.
+    using SecondOrderDir = std::function<void(const Scalar *y, const Scalar *v, Scalar *result)>;
 
     UserODERHS(std::size_t n, ODE f, Jacobian jac) : n_(n), f_(std::move(f)), jac_(std::move(jac)) {}
 
@@ -73,6 +75,13 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     // continuous adjoint (T26): Hess(lambda^T f) * v, n entries.
     UserODERHS &setHessianVectorProduct(HessianVector hv) {
         hv_ = std::move(hv);
+        return *this;
+    }
+
+    // Optional analytic second-order directional derivative H(y)*v*v for the
+    // second-order simultaneous/forward sensitivity (T27), n entries.
+    UserODERHS &setSecondOrderDirectional(SecondOrderDir sod) {
+        sod_ = std::move(sod);
         return *this;
     }
 
@@ -187,6 +196,16 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    // H(y) * v * v via the analytic hook.
+    bool secondOrderDirectional(const std::vector<Scalar> &x, const std::vector<Scalar> &v,
+                                std::vector<Scalar> &result) const override {
+        if (!sod_ || x.size() != Domain() || v.size() != n_)
+            return false;
+        result.assign(n_, Scalar(0));
+        sod_(x.data(), v.data(), result.data());
+        return true;
+    }
+
     std::size_t size_order() const override { return 1; }
     void capacity_order(std::size_t) override {}
 
@@ -200,6 +219,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         copy->fp_ = fp_;
         copy->n_param_ = n_param_;
         copy->hv_ = hv_;
+        copy->sod_ = sod_;
         return copy;
     }
 
@@ -298,6 +318,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     ParamDeriv fp_;
     std::size_t n_param_ = 0;
     HessianVector hv_;
+    SecondOrderDir sod_;
     mutable std::vector<Scalar> point_; // last Forward(0) argument (stateful point)
 };
 

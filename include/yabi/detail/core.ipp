@@ -797,6 +797,54 @@ bool BDFIntegrator<Scalar>::secondOrderAdjoint(Scalar *seed_weights, Scalar *see
     return true;
 }
 
+// Second-order forward sensitivity (T27): d^2 y / d tau^2 in the seed direction.
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::secondOrderForward(Scalar *seed_direction, Scalar *second_derivative) {
+    if (!isIntegrattionPerformed) {
+        YABI_LOG_ERROR("second-order forward: run performIntegration first!");
+        return false;
+    }
+    if (trajectory_.empty()) {
+        YABI_LOG_ERROR("second-order forward: no forward trajectory recorded!");
+        return false;
+    }
+
+    // 1. First-order tangent S' = J(y) S, S(0) = seed.
+    detail::TangentRHS<Scalar> tanRHS(*RHS, trajectory_, numOfSpecies, t_ende, parameter);
+    std::vector<Scalar> s0(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        s0[i] = seed_direction[i];
+    std::vector<Scalar> abs_err(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        abs_err[i] = absolut_error[i];
+
+    BDFIntegrator<Scalar> tangent(tanRHS);
+    if (!tangent.resetIntegration(s0.data(), 0.0, NULL, max_StepLength, relative_error,
+                                  abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!tangent.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("second-order forward: tangent integration failed!");
+        return false;
+    }
+
+    // 2. Second-order tangent S2' = J S2 + H S S, S2(0) = 0.
+    detail::SecondOrderTangentRHS<Scalar> sodRHS(*RHS, trajectory_, tangent.trajectory_,
+                                                 numOfSpecies, t_ende, parameter);
+    std::vector<Scalar> s20(numOfSpecies, (Scalar)0.0); // S2(0) = 0
+    BDFIntegrator<Scalar> sod(sodRHS);
+    if (!sod.resetIntegration(s20.data(), 0.0, NULL, max_StepLength, relative_error,
+                              abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!sod.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("second-order forward: second-order integration failed!");
+        return false;
+    }
+    sod.getSolutionVector(second_derivative); // S2(t_end) = d^2 y / d tau^2
+
+    return true;
+}
+
 // Integrator Configuration
 
 template <typename Scalar>

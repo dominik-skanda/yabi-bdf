@@ -132,6 +132,28 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    bool secondOrderDirectional(const std::vector<Scalar> &x, const std::vector<Scalar> &v,
+                                std::vector<Scalar> &result) const override {
+        if (x.size() != fun_->Domain() || v.size() != fun_->Range())
+            return false;
+        const std::size_t D = fun_->Domain();
+        const std::size_t n = fun_->Range();
+        fun_->capacity_order(2);
+        CppAD::vector<Scalar> xv(D);
+        for (std::size_t i = 0; i < D; ++i)
+            xv[i] = x[i];
+        fun_->Forward(0, xv); // x^(0) = x
+        CppAD::vector<Scalar> vv(D, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            vv[i] = v[i]; // x^(1) = v
+        fun_->Forward(1, vv);
+        CppAD::vector<Scalar> y2 = fun_->Forward(2, CppAD::vector<Scalar>(D, Scalar(0)));
+        result.assign(n, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            result[i] = 2.0 * y2[i]; // y^(2) = 1/2 H v v => H v v = 2 y^(2) (state block)
+        return true;
+    }
+
     bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
                        std::vector<Scalar> &y) const override {
         if (x.size() != fun_->Domain() * (p + 1))
