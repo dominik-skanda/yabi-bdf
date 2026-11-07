@@ -54,6 +54,26 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
 
     bool supports_taylor() const override { return true; }
 
+    bool adjointProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                        std::vector<Scalar> &result) const override {
+        if (x.size() != fun_->Domain() || lambda.size() != fun_->Range())
+            return false;
+        CppAD::vector<Scalar> xv(x.size());
+        for (std::size_t i = 0; i < x.size(); ++i)
+            xv[i] = x[i];
+        fun_->Forward(0, xv); // set the point (state, time, parameters)
+        CppAD::vector<Scalar> lamv(lambda.size());
+        for (std::size_t i = 0; i < lambda.size(); ++i)
+            lamv[i] = lambda[i];
+        CppAD::vector<Scalar> dwv = fun_->Reverse(1, lamv); // (J^T lambda, d f/dt . lambda, d f/dp^T lambda)
+        if (dwv.size() < fun_->Range()) {
+            result.clear();
+            return false;
+        }
+        result.assign(dwv.begin(), dwv.begin() + fun_->Range());
+        return true;
+    }
+
     bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
                        std::vector<Scalar> &y) const override {
         if (x.size() != fun_->Domain() * (p + 1))

@@ -261,6 +261,27 @@ integrator.getReverseSolutionVector(adj_species, adj_parameter);
 `adj_species[i][k]` is the k-th order adjoint of state `i`;
 `adj_parameter[i][k]` is the corresponding parameter adjoint.
 
+### Continuous adjoint (first order, stable reverse)
+
+The discrete adjoint `reverse()` above is exact for the discretization but
+A-stability-bound over long stiff intervals (see T24). `continuousAdjoint()`
+integrates the adjoint ODE `dλ/dt = -J(y)ᵀλ` backward in reversed time with the
+same BDF integrator, so it stays stable where the discrete replay diverges
+(e.g. HIRES to steady state):
+
+```cpp
+double weight[2] = {1.0, 0.0};   // d g / d y(T)  for  g = w^T y(T)
+double adj_y0[2];
+integrator.continuousAdjoint(weight, adj_y0, /*adj_parameter=*/nullptr);
+// adj_y0[i] = d g / d y0_i
+```
+
+It requires only that `performIntegration` has run (the forward trajectory is
+recorded automatically) and works with both CppAD (AD `Jᵀλ` via `Reverse`) and
+the pure `UserODERHS` backend (analytic Jacobian). The parameter sensitivity
+`∂g/∂p` is not yet accumulated (the integral term is deferred), and the pure
+backend is autonomous-only.
+
 ### Simultaneous (variational) sensitivities
 
 Pass seed directions and error controls directly to `resetIntegration`:

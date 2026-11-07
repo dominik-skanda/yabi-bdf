@@ -98,6 +98,21 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         throw std::runtime_error("UserODERHS: Reverse (adjoint) unavailable without an AD tape");
     }
 
+    // Continuous-adjoint Jacobian-transpose product J(y)^T lambda via the
+    // analytic Jacobian (autonomous: x = y only).
+    bool adjointProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                        std::vector<Scalar> &result) const override {
+        if (x.size() != n_ || lambda.size() != n_)
+            return false;
+        std::vector<Scalar> J(n_ * n_);
+        jac_(x.data(), J.data());
+        result.assign(n_, Scalar(0));
+        for (std::size_t k = 0; k < n_; ++k)
+            for (std::size_t i = 0; i < n_; ++i)
+                result[k] += J[i + n_ * k] * lambda[i]; // J[i + n_*k] = df_i/dy_k
+        return true;
+    }
+
     std::size_t size_order() const override { return 1; }
     void capacity_order(std::size_t) override {}
 

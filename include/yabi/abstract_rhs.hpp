@@ -53,6 +53,22 @@ template <typename Scalar> class AbstractRHS {
         return false;
     }
 
+    // First-order adjoint (Jacobian-transpose) product J(x)^T * lambda for the
+    // state block, used by the continuous adjoint (T25).  x is the full
+    // Domain() argument (state, [time], [parameters]); result has Range()
+    // entries.  Backends that cannot form it (no tape, no analytic Jacobian)
+    // return false.  CppAD evaluates it via Reverse(1, ...); the pure backend
+    // via the analytic Jacobian.  This is deliberately *separate* from
+    // Reverse(p, w), which the discrete-adjoint replay uses and which the pure
+    // backend still rejects.
+    virtual bool adjointProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                                std::vector<Scalar> &result) const {
+        (void)x;
+        (void)lambda;
+        (void)result;
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

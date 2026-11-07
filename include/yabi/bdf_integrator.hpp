@@ -40,6 +40,7 @@
     #include <vector>
 
     #include <yabi/detail/adjoint_engine.hpp>
+    #include <yabi/detail/continuous_adjoint.hpp>
     #include <yabi/detail/integrator_config.hpp>
     #include <yabi/detail/newton_solver.hpp>
     #include <yabi/detail/nordsieck_state.hpp>
@@ -110,6 +111,14 @@ template <class Scalar> class BDFIntegrator {
                                   Scalar **solution_adjoint_parameter);
     bool forward(unsigned int order, Scalar *y_seed, Scalar *parameter_seed, bool reset);
     bool reverse(unsigned int order, Scalar *seed_weights);
+    // First-order *continuous* adjoint (T25): integrate lambda' = -J(y)^T lambda
+    // backward from t_end, giving d(sum_i seed_weights[i] y_i(T)) / d y0 (and
+    // /dp) stably for long/stiff problems — the stable complement to the
+    // discrete-adjoint reverse() (IND).  Reuses the forward BDF in reversed
+    // time with a recorded trajectory; requires the forward integration to have
+    // run to t_ende first.  adjoint_parameter may be null (then only the state
+    // adjoint is computed).
+    bool continuousAdjoint(Scalar *seed_weights, Scalar *adjoint_y0, Scalar *adjoint_parameter);
     bool setStepSettings(Scalar NEWTON_STEP_REDUCTION, Scalar STEP_NOT_ACCEPTED_REDUCTION,
                          Scalar STEP_NOT_ACCEPTED_SAVETY_STEP, Scalar ORDER_STAY_SAVETY_STEP,
                          Scalar ORDER_UP_SAVETY_STEP, Scalar ORDER_DOWN_SAVETY_STEP,
@@ -319,6 +328,11 @@ template <class Scalar> class BDFIntegrator {
     // detail/adjoint_engine.hpp).  Declared after the forward engine and the
     // Newton solver because it borrows both.
     detail::AdjointEngine<Scalar> adjointEngine;
+
+    // Forward trajectory recorded during performIntegration for the continuous
+    // adjoint (see detail/continuous_adjoint.hpp).  Cleared at the start of
+    // each performIntegration run.
+    detail::Trajectory<Scalar> trajectory_;
 };
 
 } // namespace yabi

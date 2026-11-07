@@ -458,6 +458,9 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
 
         return false;
     }
+    // Reset the forward-trajectory record so the continuous adjoint reflects
+    // this run only.
+    trajectory_.clear();
 
     if (nordsieck.t_i[1] >= t_ende) {
         calculate_output_vector();
@@ -565,6 +568,9 @@ bool BDFIntegrator<Scalar>::performIntegration(const Scalar t_ende_,
         }
         calculate_next_corrector();
         nordsieck.step_size_h_old = nordsieck.step_size_h;
+        // Record the accepted step's Nordsieck history for the continuous adjoint.
+        trajectory_.record(nordsieck.t_i[1], nordsieck.step_size_h, nordsieck.order_corrector,
+                           nordsieck.z_corrector);
         if (accept_indicator == 1)
             prepare_next_step();
         if (accept_indicator == 2) {
@@ -667,6 +673,55 @@ bool BDFIntegrator<Scalar>::getReverseSolutionVector(Scalar **solution_adjoint_s
     for (i = 0; i < sizeOfParameter; i++)
         for (j = 0; j < adjointEngine.stored_adjoint_order; j++)
             solution_adjoint_parameter_[i][j] = adjointEngine.solution_adjoint_parameter[i][j];
+
+    return true;
+}
+
+// Continuous adjoint (T25): first-order stable reverse sensitivity.
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::continuousAdjoint(Scalar *seed_weights, Scalar *adjoint_y0,
+                                              Scalar *adjoint_parameter) {
+    if (!isIntegrattionPerformed) {
+        YABI_LOG_ERROR("continuous adjoint: run performIntegration first!");
+
+        return false;
+    }
+    if (trajectory_.empty()) {
+        YABI_LOG_ERROR("continuous adjoint: no forward trajectory recorded!");
+
+        return false;
+    }
+
+    // Backward adjoint ODE d lambda/d tau = J(y(T - tau))^T lambda, integrated
+    // forward in reversed time tau in [0, T] by a fresh BDF integrator.
+    detail::ContinuousAdjointRHS<Scalar> adjRHS(*RHS, trajectory_, numOfSpecies, t_ende,
+                                                parameter);
+
+    std::vector<Scalar> lam0(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        lam0[i] = seed_weights[i]; // lambda(T) = w = d g / d y(T)
+
+    std::vector<Scalar> abs_err(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        abs_err[i] = absolut_error[i];
+
+    BDFIntegrator<Scalar> adj(adjRHS);
+    if (!adj.resetIntegration(lam0.data(), 0.0, NULL, max_StepLength, relative_error,
+                              abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!adj.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("continuous adjoint: backward integration failed!");
+
+        return false;
+    }
+    adj.getSolutionVector(adjoint_y0); // lambda(0) = d g / d y0
+
+    // Parameter sensitivity (d g/d p = int_0^T lambda^T d f/d p dt) is not yet
+    // accumulated along the backward pass; leave it zero for now (honest scope).
+    if (adjoint_parameter != nullptr)
+        for (unsigned int i = 0; i < sizeOfParameter; i++)
+            adjoint_parameter[i] = (Scalar)0;
 
     return true;
 }
