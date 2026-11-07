@@ -56,13 +56,19 @@ Current coverage:
 - `test_linear_solver` — dense LAPACK path and the CSC reference path
 - `test_sparsity_pattern` — column-oriented pattern equality and shape
 - `test_csc_matrix` — CSC construction, diagonal insertion, scaling, validation
-- `test_cppad_rhs_sparsity` — CppAD sparse Jacobian detection, values, and
-  `J·v` (CppAD builds only)
+- `test_cppad_rhs_sparsity` — CppAD sparse Jacobian detection, values, `J·v`,
+  and multi-direction batch `J·V` (CppAD builds only)
 - `test_user_ode_rhs` — pure/analytic sparsity pattern validation, Jacobian
-  extraction order, analytic/default `J·v`, clone preservation, invalid input
-  rejection (both configurations)
+  extraction order, analytic/default `J·v`, batch `J·V`, clone preservation,
+  invalid input rejection (both configurations)
 - `test_krylov_solver` — GMRES/FGMRES/BiCGSTAB, preconditioners, direct
   fallback, and dense delegation (both configurations)
+- `test_preconditioner` — `Preconditioner`/`FunctionPreconditioner` contract,
+  user-preconditioner precedence, assembled vs J-free update, diagonal
+  extraction, forcing context and Eisenstat–Walker clamping (both
+  configurations)
+- `test_sensitivity_linearization` — batched `J·V`, `applyBlock`, and the
+  `SensitivityLinearization` adapter (both configurations)
 
 The CppAD RHS test is excluded automatically when `YABI_USE_CPPAD=OFF`; all
 other unit tests run in both configurations.
@@ -80,6 +86,11 @@ other unit tests run in both configurations.
   with an analytic pattern and `J·v`; runs in both configurations, asserts a
   `< 1e-9` match to the dense trajectory, a non-zero operator count, and a
   one-time diagnostic (not a silent downgrade) when the pattern is missing.
+- `matrix_free_jfree.cpp` — the same Brusselator through `UserODERHS` with **no
+  sparsity pattern** and a `requiresAssembledMatrix() == false` preconditioner;
+  asserts the dense trajectory is matched, the operator/preconditioner ran, the
+  update saw a null matrix and live operator, and no missing-pattern warning was
+  logged (both configurations).
 - `suitesparse_sparse.cpp` — UMFPACK/KLU numeric factorization with symbolic
   reuse; registered only when both libraries are found.
 

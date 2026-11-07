@@ -34,14 +34,18 @@ Tests are organised in three tiers below `tests/` and selected with ctest labels
 
 | tier | label | contents |
 |---|---|---|
-| unit | `unit` | isolated component contracts (config, replay tape, Nordsieck state, step controller, Newton, sensitivity, adjoint, dense/CSC solver, sparsity, CscMatrix, CppAD RHS sparsity, `UserODERHS` sparsity/`J·v`, Krylov solver) |
-| component | `component` | cross-component integration (`native_sparse`, `matrix_free_newton`, `matrix_free_pure`, plus `suitesparse_sparse` when SuiteSparse is available) |
+| unit | `unit` | isolated component contracts (config, replay tape, Nordsieck state, step controller, Newton, sensitivity, adjoint, dense/CSC solver, sparsity, CscMatrix, CppAD RHS sparsity/batch `J·V`, `UserODERHS` sparsity/`J·v`/batch `J·V`, Krylov solver, pluggable preconditioner/forcing, sensitivity linearization) |
+| component | `component` | cross-component integration (`native_sparse`, `matrix_free_newton`, `matrix_free_pure`, `matrix_free_jfree`, plus `suitesparse_sparse` when SuiteSparse is available) |
 | system | `system` | mathematical benchmarks and regressions (`tests/system/`) |
 
-- `ctest --test-dir build` (CppAD): **60/60 pass** — 13 unit, 4 component (including
+- `ctest --test-dir build` (CppAD): **63/63 pass** — 15 unit, 5 component (including
   `suitesparse_sparse` when SuiteSparse is available), 40 system, 3 example.
-- `ctest --test-dir build-pure` (no CppAD): **23/23 pass** — 12 unit, 1 component,
+- `ctest --test-dir build-pure` (no CppAD): **26/26 pass** — 14 unit, 2 component,
   7 pure system, 3 example.
+
+T32c (pluggable/J-free preconditioners and forcing) and T32d (batch/sparse/matrix-free sensitivity interfaces)
+are additive: every pre-existing numeric anchor below is unchanged, `yabi_basic` remains
+`6.53219478508049e-10`, and the sensitivity replay values are identical.
 
 ## Key numeric anchors (representative outputs, verbatim)
 

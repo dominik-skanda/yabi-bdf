@@ -310,16 +310,18 @@ The tests are split into three ctest tiers below `tests/`:
 - `tests/unit/` — one focused executable per component (`IntegratorConfig`,
   `ReplayTape`, `NordsieckState`, `StepController`, `NewtonSolver`,
   `SensitivityEngine`, `AdjointEngine`, `DenseLUSolver`/CSC reference path,
-  `SparsityPattern`, `CscMatrix`, CppAD RHS sparsity/`J·v`, `UserODERHS`
-  analytic sparsity/`J·v`, and the Krylov solver). These are fast,
-  dependency-light contract tests.
+  `SparsityPattern`, `CscMatrix`, CppAD RHS sparsity/`J·v`/batch `J·V`,
+  `UserODERHS` analytic sparsity/`J·v`/batch `J·V`, the Krylov solver, the
+  pluggable-preconditioner/forcing contracts, and the sensitivity-linearization
+  seams). These are fast, dependency-light contract tests.
 - `tests/component/` — cross-component integration: native CSC assembly and
   the CppAD sparse Jacobian path (`native_sparse`), matrix-free Newton–Krylov
   against the direct HIRES trajectory (`matrix_free_newton`), the same
   matrix-free path through the pure `UserODERHS` backend
-  (`matrix_free_pure`, both configurations), plus symbolic reuse with
-  UMFPACK/KLU (`suitesparse_sparse`, registered only when SuiteSparse is
-  available).
+  (`matrix_free_pure`, both configurations), a fully J-free solve with no
+  sparsity pattern and no CSC assembly (`matrix_free_jfree`, both
+  configurations), plus symbolic reuse with UMFPACK/KLU
+  (`suitesparse_sparse`, registered only when SuiteSparse is available).
 - `tests/system/` — the mathematical benchmark suite: linear problems,
   Robertson, Van der Pol, Brusselator, HIRES, Oregonator, Prothero–Robinson,
   damped pendulum, E5, large sparse/network systems, forward/reverse/
@@ -419,12 +421,72 @@ Both hooks are additive: without them `UserODERHS` keeps the historical dense
 behaviour. This activates the same CSC sparse path used by
 `CppADRHS`, in `YABI_USE_CPPAD=OFF` builds too.
 
+### Pluggable preconditioners, J-free solves, and inexact-Newton forcing
+The built-in preconditioners remain `None`, `Jacobi`, and `Direct`, but a user
+object now takes precedence. Implement `yabi::Preconditioner<Scalar>` (or wrap
+callbacks with `yabi::FunctionPreconditioner`) and install it on the solver:
+
+```cpp
+#include <yabi/preconditioner.hpp>
+
+class MyAmg : public yabi::Preconditioner<double> {
+  public:
+    bool requiresAssembledMatrix() const override { return true; }
+    bool update(const yabi::CscMatrix<double> *P,
+                const yabi::MatrixFreeOperator<double> *op,
+                const std::vector<double> &diagonal, unsigned int n) override {
+        // Build/reuse an ILU/AMG/block preconditioner from P (or op).
+        return true;
+    }
+    bool apply(const double *r, double *z) override {
+        // z = M^{-1} r.
+        return true;
+    }
+};
+
+MyAmg my_amg;
+solver->setUserPreconditioner(&my_amg); // borrowed; caller owns it
+```
+
+This is the adapter boundary for external packages (AMGCL, hypre, Trilinos,
+block/physics-based solvers); YABI does not vendor ILU/AMG. A preconditioner
+whose `requiresAssembledMatrix()` returns `false` enables a genuinely J-free
+state solve: no sparsity pattern is requested and no CSC `J`/`P` is assembled.
+`update()` then receives a null matrix, the live scaled `P·x` operator, and an
+empty diagonal, and `D1` is estimated with one `J·v` product in direction
+`2^D2` (documented as a signed row-sum approximation). A failed Krylov solve
+reports failure rather than silently falling back, because no assembled matrix
+exists.
+
+An inexact-Newton forcing term can adjust the relative linear tolerance from
+the nonlinear residual:
+
+```cpp
+solver->setForcingTerm(yabi::eisenstatWalkerForcing<double>());
+// or any callable taking NewtonLinearizationContext<double>
+```
+
+Without a callback the fixed `setTolerance()` value is used unchanged;
+`lastRelativeTolerance()` reports the value actually used.
+
+### Batched and matrix-free sensitivity interfaces
+`AbstractRHS::jacobianMatrixProduct(x, directions, columns, result)` computes
+`J·V` for several column-major directions, with a correct per-column default,
+one-Jacobian evaluation for `UserODERHS`, and one multi-direction CppAD
+`Forward(1)` sweep. `MatrixFreeOperator::applyBlock` is the batched operator
+hook, and `yabi::SensitivityLinearization` (with
+`yabi::MatrixFreeSensitivityLinearization` as an adapter) names the contract a
+future sparse/matrix-free sensitivity solve consumes. These are interfaces
+only: the current forward/reverse/simultaneous replay still uses explicit
+`J`/`H` and its numbers are unchanged.
+
 Sensitivities are deliberately unchanged: forward/reverse/simultaneous
 sensitivity still uses the explicit `J`/`H` blocks and is not matrix-free.
 `tests/component/matrix_free_newton.cpp` verifies all three Krylov methods on
 HIRES against the direct trajectory and checks that the sensitivity result is
 unchanged; `tests/component/matrix_free_pure.cpp` does the same through
-`UserODERHS` and runs in both build configurations.
+`UserODERHS` and runs in both build configurations;
+`tests/component/matrix_free_jfree.cpp` exercises the no-pattern J-free path.
 
 ### Pure/manual ODE interface (no CppAD dependency in user code)
 Users provide ODE as `std::function<void(double,const double*,int,double*)>` via `include/yabi/user_ode.hpp`. See `tests/system/manual_sensitivity_pure.cpp`.
