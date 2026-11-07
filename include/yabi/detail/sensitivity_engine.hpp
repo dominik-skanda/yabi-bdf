@@ -8,6 +8,7 @@
 #ifndef YABI_DETAIL_SENSITIVITY_ENGINE_HPP
 #define YABI_DETAIL_SENSITIVITY_ENGINE_HPP
 
+#include <algorithm>
 #include <cmath>
 #include <list>
 #include <memory>
@@ -65,6 +66,14 @@ template <typename Scalar> class SensitivityEngine {
     void beginNewTape() {
         getTAPE = false;
         lastForwardOrder = 0;
+        // The Nordsieck array has just been initialised with the nominal
+        // initial state (resetIntegration writes it before createNewTape()).
+        // Higher-order Taylor replays start from that value, not from the
+        // directional seed.
+        initial_state.assign(numOfSpecies, (Scalar)0.0);
+        for (unsigned int i = 0; i < numOfSpecies; i++)
+            initial_state[i] = nordsieck.z_corrector[i];
+        initial_time = start_integration_time;
     }
 
     void zeroForwardSolution() {
@@ -350,6 +359,25 @@ template <typename Scalar> class SensitivityEngine {
             return false;
         }
 
+        // Orders >= 2 need the full Taylor polynomial of every intermediate
+        // value.  The legacy single-coefficient replay below cannot provide
+        // that, so route to the polynomial replay.  Direct mode has no full
+        // Taylor state of the implicit solve and stays limited to order 1.
+        if (order >= 2) {
+            if (direct) {
+                YABI_LOG_ERROR("forward(order=", order,
+                               ") is not supported in direct sensitivity mode; use direct=false.");
+                return false;
+            }
+            if (!start_CppAD_tape->supports_taylor()) {
+                YABI_LOG_ERROR("forward(order=", order,
+                               ") needs a right-hand side with full Taylor support (CppAD); "
+                               "the current RHS backend only provides single-coefficient Forward.");
+                return false;
+            }
+            return forwardFull(order, y_seed, parameter_seed);
+        }
+
         if (reset || order != lastForwardOrder)
             getTAPE = false;
         lastForwardOrder = order;
@@ -395,15 +423,6 @@ template <typename Scalar> class SensitivityEngine {
                     cppAD_argument[numOfSpecies + 1 + i] = parameter_seed[i];
 
             std::vector<Scalar> df(numOfSpecies);
-            if (order > 1 && start_CppAD_tape->size_order() < order) {
-                YABI_LOG_ERROR(
-                    "forward(order=", order, ") requested, but the replay tape only stores ",
-                    start_CppAD_tape->size_order(),
-                    " Taylor order(s). CppAD Forward(q) is incremental: call forward(1), "
-                    "forward(2), ... "
-                    "in ascending order first (e.g. forward(1, ...) before forward(2, ...)).");
-                return false;
-            }
             df = start_CppAD_tape->Forward(order, cppAD_argument);
 
             for (i = 0; i < numOfSpecies; i++) {
@@ -527,6 +546,268 @@ template <typename Scalar> class SensitivityEngine {
         }
 
         return true;
+    }
+
+    // Full Taylor-polynomial forward replay for orders >= 2.
+    //
+    // Every intermediate quantity of the frozen BDF algorithm is a truncated
+    // Taylor polynomial in the sensitivity parameter tau, with the initial
+    // state y0 + tau*y_seed (and p0 + tau*parameter_seed).  The nonlinear RHS
+    // is evaluated with CppAD's full-Taylor Forward(q, xq) so that all
+    // coefficients 0..order are obtained at once.  The returned value is the
+    // order-th derivative d^order/d tau^order of the output (order! times the
+    // order-th Taylor coefficient), reproducing the documented forward API.
+    bool forwardFull(unsigned int order, Scalar *y_seed, Scalar *parameter_seed) {
+        const unsigned int n = numOfSpecies;
+        const std::size_t P = (std::size_t)order + 1;
+        if (initial_state.size() != n) {
+            YABI_LOG_ERROR("forward(order=", order, "): initial state was not recorded!");
+            return false;
+        }
+
+        auto blank = [&]() { return std::vector<Scalar>(P * n, (Scalar)0); };
+        std::vector<std::vector<Scalar>> zc(7), zp(7);
+        for (unsigned int j = 0; j < 7; j++) {
+            zc[j] = blank();
+            zp[j] = blank();
+        }
+
+        // Initial Nordsieck array: z0 = (y_I(tau), h_init * F(y_I(tau)), 0, ...)
+        for (unsigned int i = 0; i < n; i++) {
+            zc[0][i] = initial_state[i];
+            zc[0][n + i] = (order >= 1 && y_seed != NULL) ? y_seed[i] : (Scalar)0;
+        }
+
+        const std::size_t domain = start_CppAD_tape->Domain();
+        std::vector<Scalar> xpoly(domain * P, (Scalar)0);
+        std::vector<Scalar> ypoly;
+
+        for (unsigned int i = 0; i < n; i++)
+            for (std::size_t q = 0; q < P; q++)
+                xpoly[P * i + q] = zc[0][q * n + i];
+        if (RHS_type >= 1)
+            xpoly[P * n] = initial_time;
+        if (RHS_type == 2)
+            for (unsigned int j = 0; j < sizeOfParameter; j++) {
+                xpoly[P * (n + 1 + j)] = parameter[j];
+                if (parameter_seed != NULL)
+                    xpoly[P * (n + 1 + j) + 1] = parameter_seed[j];
+            }
+
+        if (!start_CppAD_tape->taylorForward(order, xpoly, ypoly)) {
+            YABI_LOG_ERROR("forward(order=", order,
+                           "): the RHS tape failed to produce full Taylor coefficients.");
+            return false;
+        }
+        for (std::size_t q = 0; q < P; q++)
+            for (unsigned int i = 0; i < n; i++)
+                zc[1][q * n + i] = startTape_stepSize * ypoly[P * i + q];
+
+        unsigned int order_corrector = 1;
+        Scalar stepSizeSet[6] = {0, 0, 0, 0, 0, 0};
+        Scalar h = startTape_stepSize;
+        Scalar time = initial_time;
+
+        intermediateTAPE = startTAPE;
+        while (intermediateTAPE != NULL) {
+            adjointTapePointer = NULL;
+
+            if (intermediateTAPE->orderUP) {
+                order_corrector += 1;
+                for (unsigned int i = 0; i < n; i++)
+                    for (unsigned int j = order_corrector; j <= 6; j++)
+                        for (std::size_t q = 0; q < P; q++)
+                            zc[j][q * n + i] = 0.0;
+                intermediateTAPE = intermediateTAPE->forwardLINK;
+                continue;
+            }
+
+            if (intermediateTAPE->orderDOWN) {
+                // Same order-reduction linear map as the scalar replay, applied
+                // coefficient-wise to the Taylor polynomials.
+                Scalar d_kahan[4] = {0, 0, 0, 0};
+                Scalar d_i[6] = {0, 0, 0, 0, 0, 0};
+                d_i[0] = 0.0;
+                d_i[1] = 0.0;
+                for (unsigned int i = 2; i <= order_corrector; i++)
+                    for (unsigned int j = i; j > 1; j--) {
+                        if (j == i) {
+                            if (j != 6)
+                                d_i[j] = 1.0;
+                        } else {
+                            Scalar y = d_i[j - 1] - (d_kahan[j - 2] * stepSizeSet[i - 3] / h);
+                            Scalar t = (d_i[j] * stepSizeSet[i - 3] / h) + y;
+                            d_kahan[j - 2] = (t - d_i[j]) - y;
+                            d_i[j] = t;
+                        }
+                    }
+                for (unsigned int j = 2; j < order_corrector; j++)
+                    if (d_i[j] != 0.0)
+                        for (std::size_t q = 0; q < P; q++)
+                            for (unsigned int i = 0; i < n; i++)
+                                zc[j][q * n + i] -= d_i[j] * zc[order_corrector][q * n + i];
+                order_corrector -= 1;
+                intermediateTAPE = intermediateTAPE->forwardLINK;
+                continue;
+            }
+
+            if (intermediateTAPE->calculate_output == true) {
+                std::vector<Scalar> out = blank();
+                for (unsigned int j = 0; j <= order_corrector; j++) {
+                    Scalar theta = 1.0;
+                    const Scalar ratio =
+                        (intermediateTAPE->timePoint - time) / h;
+                    for (unsigned int m = 0; m < j; m++)
+                        theta *= ratio;
+                    for (std::size_t q = 0; q < P; q++)
+                        for (unsigned int i = 0; i < n; i++)
+                            out[q * n + i] += theta * zc[j][q * n + i];
+                }
+                Scalar factorial = 1.0;
+                for (unsigned int k = 2; k <= order; k++)
+                    factorial *= (Scalar)k;
+                for (unsigned int i = 0; i < n; i++)
+                    forward_solution_Vector[i] = factorial * out[(std::size_t)order * n + i];
+
+                for (unsigned int i = 0; i < n; i++)
+                    if (!std::isfinite(forward_solution_Vector[i]) ||
+                        std::fabs(forward_solution_Vector[i]) > 1e50) {
+                        YABI_LOG_ERROR("ERROR: forward sensitivity diverged (component ", i,
+                                       " = ", forward_solution_Vector[i],
+                                       "). The taping replay is unstable for this problem; use the "
+                                       "simultaneous (variational) sensitivity instead.");
+                        return false;
+                    }
+
+                adjointTapePointer = intermediateTAPE;
+                possible_adjoint_order = order + 1;
+                start_adjoint_from_forward_mode = true;
+                getTAPE = true;
+                lastForwardOrder = order;
+                return true;
+            }
+
+            // Step-size rescaling of every Taylor coefficient of every column.
+            if (intermediateTAPE->stepSize != h) {
+                const Scalar ratio = intermediateTAPE->stepSize / h;
+                for (unsigned int j = 0; j <= order_corrector; j++) {
+                    Scalar factor = 1.0;
+                    for (unsigned int m = 0; m < j; m++)
+                        factor *= ratio;
+                    for (std::size_t q = 0; q < P; q++)
+                        for (unsigned int i = 0; i < n; i++)
+                            zc[j][q * n + i] *= factor;
+                }
+            }
+            h = intermediateTAPE->stepSize;
+            time = intermediateTAPE->timePoint;
+            for (unsigned int j = 5; j > 0; j--)
+                stepSizeSet[j] = stepSizeSet[j - 1] + h;
+            stepSizeSet[0] = h;
+
+            // Predictor: z_p[j] = sum_{m=j}^{order} C(m,j) z_c[m],
+            // coefficient-wise (the Nordsieck Taylor shift).
+            for (unsigned int j = 0; j <= order_corrector; j++) {
+                std::fill(zp[j].begin(), zp[j].end(), (Scalar)0);
+                Scalar binomial = 1.0;
+                for (unsigned int m = j; m <= order_corrector; m++) {
+                    if (m > j)
+                        binomial = binomial * (Scalar)m / (Scalar)(m - j);
+                    for (std::size_t q = 0; q < P; q++)
+                        for (unsigned int i = 0; i < n; i++)
+                            zp[j][q * n + i] += binomial * zc[m][q * n + i];
+                }
+            }
+
+            // l_i vector and iteration-matrix hand-off for the adjoint sweep.
+            order_corrector_tape = order_corrector;
+            step_size_h_tape = h;
+            time_tape = time;
+            for (unsigned int j = 0; j < 6; j++)
+                stepSizeSet_tape[j] = stepSizeSet[j];
+            calculate_l_vector_forward();
+
+            if (!intermediateTAPE->P.empty()) {
+                P_tape.resize(n * n);
+                ip_tape.resize(n);
+                scaling_D1_tape.resize(n);
+                scaling_D2_tape.resize(n);
+                for (unsigned int i = 0; i < n; i++) {
+                    scaling_D1_tape[i] = intermediateTAPE->scaling_D1[i];
+                    scaling_D2_tape[i] = intermediateTAPE->scaling_D2[i];
+                    ip_tape[i] = intermediateTAPE->ip[i];
+                    for (unsigned int j = 0; j < n; j++)
+                        P_tape[i * n + j] = intermediateTAPE->P[i * n + j];
+                }
+            } else if (P_tape.empty() || ip_tape.empty()) {
+                YABI_LOG_ERROR("forward(order=", order,
+                               "): tape is missing the Newton iteration matrix.");
+                return false;
+            }
+
+            // Simplified Newton iteration on the Taylor polynomials, with the
+            // frozen iteration matrix and the recorded number of iterations.
+            std::vector<Scalar> c = zp[0];
+            std::vector<Scalar> delta_total = blank();
+            for (unsigned int it = 0; it < intermediateTAPE->NewtonIterates; it++) {
+                for (unsigned int i = 0; i < n; i++)
+                    for (std::size_t q = 0; q < P; q++)
+                        xpoly[P * i + q] = c[q * n + i];
+                if (RHS_type >= 1) {
+                    xpoly[P * n] = time;
+                    for (std::size_t q = 1; q < P; q++)
+                        xpoly[P * n + q] = 0.0;
+                }
+                if (RHS_type == 2)
+                    for (unsigned int j = 0; j < sizeOfParameter; j++) {
+                        xpoly[P * (n + 1 + j)] = parameter[j];
+                        if (parameter_seed != NULL)
+                            xpoly[P * (n + 1 + j) + 1] = parameter_seed[j];
+                        for (std::size_t q = 2; q < P; q++)
+                            xpoly[P * (n + 1 + j) + q] = 0.0;
+                    }
+
+                if (!intermediateTAPE->CppAD_tape[it]->taylorForward(order, xpoly, ypoly)) {
+                    YABI_LOG_ERROR("forward(order=", order,
+                                   "): the replay tape failed to produce full Taylor coefficients.");
+                    return false;
+                }
+
+                std::vector<Scalar> bpol = blank();
+                const Scalar inv_l1 = 1.0 / l_i_tape[1];
+                const Scalar minus_h_over_l1 = -h / l_i_tape[1];
+                for (std::size_t q = 0; q < P; q++)
+                    for (unsigned int i = 0; i < n; i++)
+                        bpol[q * n + i] = zp[1][q * n + i] * inv_l1 +
+                                          minus_h_over_l1 * ypoly[P * i + q] + c[q * n + i] -
+                                          zp[0][q * n + i];
+
+                for (std::size_t q = 0; q < P; q++) {
+                    for (unsigned int i = 0; i < n; i++)
+                        bpol[q * n + i] = -(Scalar)scalbn(bpol[q * n + i], scaling_D1_tape[i]);
+                    linalg::GETRS_NT(n, blasONE, P_tape.data(), n, ip_tape.data(),
+                                     &bpol[q * n], n);
+                    for (unsigned int i = 0; i < n; i++)
+                        bpol[q * n + i] = (Scalar)scalbn(bpol[q * n + i], scaling_D2_tape[i]);
+                }
+
+                for (std::size_t k = 0; k < P * n; k++) {
+                    c[k] += bpol[k];
+                    delta_total[k] += bpol[k];
+                }
+            }
+
+            for (unsigned int j = 0; j <= order_corrector; j++)
+                for (std::size_t q = 0; q < P; q++)
+                    for (unsigned int i = 0; i < n; i++)
+                        zc[j][q * n + i] =
+                            zp[j][q * n + i] + l_i_tape[j] * delta_total[q * n + i];
+
+            intermediateTAPE = intermediateTAPE->forwardLINK;
+        }
+
+        YABI_LOG_ERROR("forward(order=", order, "): tape has no output entry.");
+        return false;
     }
 
     // One replay step: assemble the sensitivity RHS, factor/reuse the tape's
@@ -841,6 +1122,8 @@ template <typename Scalar> class SensitivityEngine {
     std::vector<Scalar> reachableError_derivatives;
 
     // --- forward replay state ---
+    std::vector<Scalar> initial_state;
+    Scalar initial_time = 0.0;
     Scalar l_i_tape[7] = {};
     Scalar time_tape = 0.0;
     Scalar stepSizeSet_tape[6] = {};

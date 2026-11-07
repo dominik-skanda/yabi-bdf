@@ -828,6 +828,22 @@ template <typename Scalar> class AdjointEngine {
                 solution_adjoint_parameter[i][k] +=
                     dw[(numOfSpecies + 1 + i) * order + order - k - 1];
 
+        // CppAD's Reverse weights the k-th Taylor order by 1/k! (see the
+        // Reverse definition: W = sum_k w^(k) / k! * d^k/dt^k Y).  The replay
+        // therefore yields the adjoint of the k-th Taylor *coefficient*.
+        // forward(order) returns order! times that coefficient (the pure
+        // directional derivative), so rescale the adjoint of order k+1 by k!
+        // to keep both APIs on the same pure-derivative convention.
+        Scalar adjoint_factorial = 1.0;
+        for (k = 0; k < order; k++) {
+            if (k > 0)
+                adjoint_factorial *= (Scalar)k;
+            for (i = 0; i < numOfSpecies; i++)
+                solution_adjoint_species[i][k] *= adjoint_factorial;
+            for (i = 0; i < sizeOfParameter; i++)
+                solution_adjoint_parameter[i][k] *= adjoint_factorial;
+        }
+
         stored_adjoint_order = order;
 
         // delete

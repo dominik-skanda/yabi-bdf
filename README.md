@@ -26,10 +26,10 @@ sensitivity analysis through CppAD automatic differentiation.
 
 ## Quick Verification
 
-Prove tolerance adherence, first-order convergence, and second-order sensitivity
+Prove tolerance adherence, first-order convergence, and higher-order sensitivity
 in one command. This regenerates the work–precision diagram
 (`work_precision_diagram.png`) and prints the slope summary plus the
-second-order sensitivity output locally.
+higher-order (forward/reverse, orders 1–4) sensitivity output locally.
 
 ```sh
 cmake -S . -B build && cmake --build build -j
@@ -41,8 +41,8 @@ their output:
 
 - `build/yabi_test_11_tolerance_and_order` — the work–precision proof (tolerance
   adherence + first-order step convergence).
-- `build/yabi_test_28_second_order_sensitivity` — exact second-order forward and
-  reverse sensitivities.
+- `build/yabi_test_28_second_order_sensitivity` — exact forward and reverse
+  sensitivities of orders 1–4.
 
 Plotting requires `matplotlib` (the build and the two binaries themselves do
 not):
@@ -282,26 +282,51 @@ integrator.getSimultaneousDerivativesVector(solution_derivatives);
 `examples/sensitivity_demo.cpp` demonstrates all three modes and checks them
 against central finite differences.
 
-### Second-order (forward / reverse)
+### Higher-order (forward / reverse)
 
-`forward` and `reverse` take an `order` argument. Order `q` is computed
-incrementally: CppAD's `Forward(q)` needs the lower Taylor orders first, so to
-obtain the second-order directional derivative you run order 1 first:
+`forward` and `reverse` take an `order` argument and support arbitrary order
+(1, 2, 3, …). Order 1 uses the legacy single-coefficient replay. Orders 2 and
+up use a full Taylor-polynomial replay of the frozen BDF algorithm: every
+intermediate quantity is a truncated Taylor polynomial in the sensitivity
+parameter τ, the nonlinear RHS is evaluated with CppAD's full-Taylor
+`Forward(q, xq)` (`xq.size() == Domain()*(q+1)`), and the returned value is the
+order-th directional derivative `d^order y / d seed^order` (i.e. `order!` times
+the order-th Taylor coefficient — the *pure* derivative, not the raw Taylor
+coefficient).
 
 ```cpp
-integrator.forward(1, seed, pseed, true);
-integrator.forward(1, seed, pseed, false);
-integrator.forward(2, seed, pseed, true);
-integrator.forward(2, seed, pseed, false);
-integrator.getForwardSolutionVector(dir2);   // d^2 y / d seed^2
+// A single call computes order q directly; no forward(1), forward(2), ...
+// warm-up sequence is needed for q >= 2.
+integrator.forward(q, y_seed, p_seed, true);
+integrator.getForwardSolutionVector(dir);    // d^q y / d seed^q
 
-integrator.reverse(2, weights);              // 2nd-order adjoint
-integrator.getReverseSolutionVector(adj_sp, adj_p);   // adj_sp[i][1] = 2nd-order
+integrator.reverse(q, weights);              // q-th-order adjoint
+integrator.getReverseSolutionVector(adj_sp, adj_p);   // adj_sp[i][k], k = 0..q-1
 ```
 
-A direct `forward(2)` without a prior `forward(1)` is not valid. The
-`tests/system/28_second_order_sensitivity.cpp` driver verifies second order against
-the exact analytical solution of `y' = y²`.
+`reverse(q)` returns the adjoint coefficients of orders 1..q: `adj_sp[i][k]` is
+the k-th-order directional sensitivity of `sum_j weights[j] * y_j` with respect
+to initial state `i` (and likewise for `adj_p`). It is aligned to the same
+pure-derivative convention as `forward` (each order `k` is rescaled by `k!` to
+undo CppAD's `1/k!` Taylor weighting). The reverse is the *gradient-level* dual
+of the forward solution-level derivative: for a scalar ODE with unit seed and
+unit weight, `forward(q)` and `reverse(q)[q-1]` coincide.
+
+Limitations:
+
+- `forward(order >= 2)` requires an RHS backend with full-Taylor support
+  (the CppAD adapter). A `UserODERHS`-style backend exposes only
+  single-coefficient `Forward`, so order ≥ 2 fails loudly with
+  `YABI_USE_CPPAD=OFF`.
+- `direct` sensitivity mode has no full-Taylor state of the implicit solve and
+  stays limited to order 1; higher orders fail loudly.
+- `reverse(q)` must follow the `forward(q)` that produced the output state
+  (it replays the forward tangent direction), as in the examples above.
+
+The `tests/system/28_second_order_sensitivity.cpp` driver verifies orders 1–4
+against the exact solution of `y' = y²`, and
+`tests/system/33_higher_order_sensitivity.cpp` covers a coupled nonlinear
+system, a non-autonomous system, and a parameter-dependent system.
 
 ## Tests
 
@@ -325,8 +350,8 @@ The tests are split into three ctest tiers below `tests/`:
 - `tests/system/` — the mathematical benchmark suite: linear problems,
   Robertson, Van der Pol, Brusselator, HIRES, Oregonator, Prothero–Robinson,
   damped pendulum, E5, large sparse/network systems, forward/reverse/
-  simultaneous sensitivities, second order, dense output, fixed order, and
-  failure/tolerance regressions.
+  simultaneous sensitivities, higher-order (forward/reverse, orders 1–4),
+  dense output, fixed order, and failure/tolerance regressions.
 
 Every test checks its result against an independent reference solution.
 Run a single tier with `ctest --test-dir build -L unit`, `-L component`, or

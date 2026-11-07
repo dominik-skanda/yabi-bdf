@@ -33,6 +33,26 @@ template <typename Scalar> class AbstractRHS {
     virtual void capacity_order(std::size_t n) = 0;
     virtual AbstractRHS *clone() const = 0;
 
+    // Full Taylor replay capability.
+    //
+    // Forward(p, x) above evaluates the p-th Taylor coefficient of f for the
+    // Taylor polynomial of the independent variable whose *single* coefficient
+    // order p is x (all lower coefficients come from the ADFun's stored state).
+    // Higher-order sensitivity replays instead need all coefficients 0..p at
+    // once: x has Domain()*(p+1) entries in CppAD's layout
+    // x[(p+1)*j + k] and the result has Range()*(p+1) entries
+    // y[(p+1)*i + k], with k the Taylor order.  Backends that can do this
+    // (CppAD's ADFun::Forward(q, xq) with a full xq) advertise it through
+    // supports_taylor() and implement taylorForward().
+    virtual bool supports_taylor() const { return false; }
+    virtual bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
+                               std::vector<Scalar> &y) const {
+        (void)p;
+        (void)x;
+        y.clear();
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

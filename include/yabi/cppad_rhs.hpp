@@ -52,6 +52,24 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
     std::size_t size_order() const override { return fun_->size_order(); }
     void capacity_order(std::size_t n) override { fun_->capacity_order(n); }
 
+    bool supports_taylor() const override { return true; }
+
+    bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
+                       std::vector<Scalar> &y) const override {
+        if (x.size() != fun_->Domain() * (p + 1))
+            return false;
+        CppAD::vector<Scalar> xv(x.size());
+        for (std::size_t i = 0; i < x.size(); ++i)
+            xv[i] = x[i];
+        CppAD::vector<Scalar> yv = fun_->Forward(p, xv);
+        if (yv.size() != fun_->Range() * (p + 1)) {
+            y.clear();
+            return false;
+        }
+        y.assign(yv.begin(), yv.end());
+        return true;
+    }
+
     AbstractRHS<Scalar> *clone() const override {
         CppAD::ADFun<Scalar> *copy = new CppAD::ADFun<Scalar>();
         *copy = *fun_;
