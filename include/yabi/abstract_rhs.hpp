@@ -69,6 +69,20 @@ template <typename Scalar> class AbstractRHS {
         return false;
     }
 
+    // First-order parameter-adjoint product (d f/d p)^T * lambda, used by the
+    // continuous adjoint's parameter sensitivity (T25a).  x is the full Domain()
+    // argument; lambda has Range() entries; result has
+    // (Domain() - Range() - 1) entries (the parameter block, empty for
+    // autonomous/time-only RHS).  Backends without parameters return false.
+    virtual bool adjointParameterProduct(const std::vector<Scalar> &x,
+                                         const std::vector<Scalar> &lambda,
+                                         std::vector<Scalar> &result) const {
+        (void)x;
+        (void)lambda;
+        (void)result;
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

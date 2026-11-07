@@ -272,15 +272,17 @@ same BDF integrator, so it stays stable where the discrete replay diverges
 ```cpp
 double weight[2] = {1.0, 0.0};   // d g / d y(T)  for  g = w^T y(T)
 double adj_y0[2];
-integrator.continuousAdjoint(weight, adj_y0, /*adj_parameter=*/nullptr);
-// adj_y0[i] = d g / d y0_i
+double adj_p[1];                 // one entry per parameter (RHS_type 2)
+integrator.continuousAdjoint(weight, adj_y0, adj_p);
+// adj_y0[i] = d g / d y0_i,   adj_p[j] = d g / d p_j
 ```
 
 It requires only that `performIntegration` has run (the forward trajectory is
-recorded automatically) and works with both CppAD (AD `Jᵀλ` via `Reverse`) and
-the pure `UserODERHS` backend (analytic Jacobian). The parameter sensitivity
-`∂g/∂p` is not yet accumulated (the integral term is deferred), and the pure
-backend is autonomous-only.
+recorded automatically) and works with both CppAD (AD `Jᵀλ`/`(∂f/∂p)ᵀλ` via
+`Reverse`) and the pure `UserODERHS` backend (analytic Jacobian). The parameter
+sensitivity `∂g/∂p` is accumulated with an augmented backward state (the `μ`
+accumulator), and the pure backend supports time- and parameter-dependent RHS
+via `setTimeDerivative`/`setParameterDerivative`.
 
 ### Simultaneous (variational) sensitivities
 

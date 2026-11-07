@@ -78,24 +78,28 @@ template <typename Scalar> class Trajectory {
 // BDF integrator can integrate it backward in reversed time.
 //
 //   d(lambda)/d tau = J(y(T - tau))^T lambda,   tau in [0, T]
+//   d(mu)/d tau     = (d f/d p)^T lambda,       mu(T) = 0  =>  mu(0) = d g/d p
 //
-// The state y(T - tau) is looked up from a recorded Trajectory, and the
-// Jacobian-transpose product J(y)^T v is taken from AbstractRHS::Reverse(1, v)
-// (the first `n` components).  This keeps the adjoint backend-agnostic: CppAD
-// supplies Reverse via AD, the pure UserODERHS supplies it via the analytic
-// Jacobian.
+// The state y(T - tau) is looked up from a recorded Trajectory.  The
+// Jacobian-transpose product J(y)^T v comes from AbstractRHS::adjointProduct,
+// and the parameter-adjoint (d f/d p)^T v from adjointParameterProduct — both
+// backend-agnostic (CppAD via AD, pure UserODERHS via the analytic Jacobian).
 template <typename Scalar> class ContinuousAdjointRHS : public AbstractRHS<Scalar> {
   public:
     ContinuousAdjointRHS(const AbstractRHS<Scalar> &base, const Trajectory<Scalar> &trajectory,
                          std::size_t n, Scalar T, const std::vector<Scalar> &parameter)
-        : base_(base.clone()), trajectory_(trajectory), n_(n), T_(T), parameter_(parameter) {}
+        : base_(base.clone()), trajectory_(trajectory), n_(n), p_(parameter.size()), T_(T),
+          parameter_(parameter) {}
 
-    std::size_t Domain() const override { return n_ + 1; } // (lambda, tau)
-    std::size_t Range() const override { return n_; }
+    std::size_t Domain() const override { return n_ + p_ + 1; } // (lambda, mu, tau)
+    std::size_t Range() const override { return n_ + p_; }
 
     std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
-        // x = (lambda[0..n), tau)
-        const Scalar tau = x[n_];
+        (void)p; // the augmented adjoint is linear in (lambda, mu), so Forward(0)
+                 // and Forward(1) both reduce to J(y)^T / (d f/dp)^T applied to
+                 // the state direction.
+        // x = (lambda[0..n), mu[n..n+p), tau)
+        const Scalar tau = x[n_ + p_];
         const Scalar t = T_ - tau;
         std::vector<Scalar> y(n_);
         trajectory_.interpolate(t, y.data(), n_);
@@ -107,22 +111,31 @@ template <typename Scalar> class ContinuousAdjointRHS : public AbstractRHS<Scala
             arg[k++] = y[i];
         if (k < base_->Domain())
             arg[k++] = t; // time-dependent
-        for (std::size_t i = 0; i < parameter_.size(); ++i)
+        for (std::size_t i = 0; i < p_; ++i)
             arg[k++] = parameter_[i];
 
-        // Direction: lambda for the value, or the state direction for the
-        // Newton Jacobian column (tau direction is always 0 in the integrator).
+        // Direction: the first n_ entries (lambda for Forward(0), the state
+        // direction for Forward(1)); mu and tau directions are always 0 in the
+        // Newton Jacobian sweep.
         std::vector<Scalar> dir(x.begin(), x.begin() + n_);
 
-        std::vector<Scalar> Jt_dir;
-        if (!base_->adjointProduct(arg, dir, Jt_dir)) {
+        std::vector<Scalar> Jt;
+        if (!base_->adjointProduct(arg, dir, Jt)) {
             // Should not happen: adjointProduct is required for the continuous
             // adjoint and checked up front by continuousAdjoint().
             throw std::runtime_error("ContinuousAdjointRHS: adjointProduct unsupported");
         }
-        (void)p; // the adjoint is linear in lambda, so Forward(0) and Forward(1)
-                 // both reduce to J(y)^T applied to the state direction.
-        return Jt_dir;
+        std::vector<Scalar> pt;
+        if (p_ > 0)
+            base_->adjointParameterProduct(arg, dir, pt);
+
+        // Augmented RHS value: (J^T dir, (d f/dp)^T dir).
+        std::vector<Scalar> out(n_ + p_);
+        for (std::size_t i = 0; i < n_; ++i)
+            out[i] = Jt[i];
+        for (std::size_t i = 0; i < p_; ++i)
+            out[n_ + i] = (i < pt.size()) ? pt[i] : Scalar(0);
+        return out;
     }
 
     std::vector<Scalar> Reverse(std::size_t, const std::vector<Scalar> &) const override {
@@ -140,6 +153,7 @@ template <typename Scalar> class ContinuousAdjointRHS : public AbstractRHS<Scala
     std::unique_ptr<AbstractRHS<Scalar>> base_; // cloned forward RHS (owns)
     Trajectory<Scalar> trajectory_;
     std::size_t n_;
+    std::size_t p_;
     Scalar T_;
     std::vector<Scalar> parameter_;
 };

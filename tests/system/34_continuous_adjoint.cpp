@@ -80,16 +80,18 @@ static void parameter_dependent() {
     rhs.optimize();
 
     const double y0v = 2.0, p = 1.5, T = 0.2;
-    double y0[1] = {y0v}, pp[1] = {p}, ab[1] = {1e-12}, w[1] = {1.0}, adj[1];
+    double y0[1] = {y0v}, pp[1] = {p}, ab[1] = {1e-12}, w[1] = {1.0}, adj[1], adj_p[1];
     yabi::BDFIntegrator<double> it(rhs);
     if (!it.resetIntegration(y0, 0.0, pp, 0.01, 1e-12, ab, false, false, NULL, NULL, NULL, NULL,
                              0) ||
-        !it.performIntegration(T, 100000) || !it.continuousAdjoint(w, adj, NULL)) {
+        !it.performIntegration(T, 100000) || !it.continuousAdjoint(w, adj, adj_p)) {
         std::printf("  parameter-dependent: continuousAdjoint FAILED\n");
         fails++;
         return;
     }
-    check("parameter-dependent dg/dy0", adj[0], 1.0 / std::pow(1.0 - y0v * p * T, 2.0));
+    const double u = 1.0 - y0v * p * T;
+    check("parameter-dependent dg/dy0", adj[0], 1.0 / (u * u));
+    check("parameter-dependent dg/dp", adj_p[0], y0v * y0v * T / (u * u));
 }
 
 // Robertson at t=1 (IND is stable there): cross-check continuous adjoint vs

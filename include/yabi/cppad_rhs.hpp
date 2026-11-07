@@ -74,6 +74,30 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    bool adjointParameterProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                                 std::vector<Scalar> &result) const override {
+        // Parameter block is (Domain - Range - 1) entries (present only for
+        // RHS_type 2, i.e. time + parameter).
+        const std::size_t p = fun_->Domain() - fun_->Range() - 1;
+        if (p == 0 || x.size() != fun_->Domain() || lambda.size() != fun_->Range())
+            return false;
+        CppAD::vector<Scalar> xv(x.size());
+        for (std::size_t i = 0; i < x.size(); ++i)
+            xv[i] = x[i];
+        fun_->Forward(0, xv);
+        CppAD::vector<Scalar> lamv(lambda.size());
+        for (std::size_t i = 0; i < lambda.size(); ++i)
+            lamv[i] = lambda[i];
+        CppAD::vector<Scalar> dwv = fun_->Reverse(1, lamv); // (J^T lam, df/dt.lam, df/dp^T lam)
+        if (dwv.size() < fun_->Domain()) {
+            result.clear();
+            return false;
+        }
+        const std::size_t offset = fun_->Range() + 1; // skip state + time
+        result.assign(dwv.begin() + offset, dwv.end());
+        return true;
+    }
+
     bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
                        std::vector<Scalar> &y) const override {
         if (x.size() != fun_->Domain() * (p + 1))

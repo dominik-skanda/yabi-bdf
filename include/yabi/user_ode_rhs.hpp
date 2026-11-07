@@ -12,8 +12,11 @@
 
 namespace yabi {
 
-// Pure (CppAD-free) AbstractRHS adapter for an autonomous ODE f(y) with an
-// analytic Jacobian J(y) = df/dy (column-major: J[i + n*j] = df_i/dy_j).
+// Pure (CppAD-free) AbstractRHS adapter for an ODE f(y) with an analytic
+// Jacobian J(y) = df/dy (column-major: J[i + n*j] = df_i/dy_j).  Autonomous by
+// default; setTimeDerivative(ft) and setParameterDerivative(n, fp) extend it to
+// time-dependent f(t, y) and time+parameter f(t, y, p) forms, in which case the
+// callbacks receive the full argument (y, [t], [p]).
 //
 // Forward(0, x) evaluates f(x) and remembers x as the "point" (matching
 // CppAD's stateful ADFun semantics: the core sets the point with Forward(0)
@@ -38,8 +41,29 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     using Jacobian = std::function<void(const Scalar *y, Scalar *J)>; // n*n, column-major
     using JacobianVector =
         std::function<void(const Scalar *y, const Scalar *v, Scalar *Jv)>; // n, J(y)*v
+    using TimeDeriv = std::function<void(const Scalar *y, Scalar *ft)>;    // n, df/dt(y)
+    using ParamDeriv =
+        std::function<void(const Scalar *y, Scalar *fp)>; // n*n_param, column-major df/dp
 
     UserODERHS(std::size_t n, ODE f, Jacobian jac) : n_(n), f_(std::move(f)), jac_(std::move(jac)) {}
+
+    // Mark the RHS as time-dependent and supply df/dt.  The ODE/Jacobian/…/
+    // callbacks then receive the full argument (y, [t], [p]) instead of just y,
+    // with t at index n and parameters at n+1 …
+    UserODERHS &setTimeDerivative(TimeDeriv ft) {
+        ft_ = std::move(ft);
+        has_time_ = true;
+        return *this;
+    }
+
+    // Mark the RHS as parameter-dependent and supply df/dp (column-major,
+    // n x n_param).  Call setTimeDerivative() first — parameters follow time in
+    // the argument layout.
+    UserODERHS &setParameterDerivative(std::size_t n_param, ParamDeriv fp) {
+        n_param_ = n_param;
+        fp_ = std::move(fp);
+        return *this;
+    }
 
     // Structural sparsity of J = df/dy, column-oriented: column_rows[j] lists
     // the rows i for which J(i,j) may be non-zero.  The pattern is the user's
@@ -70,7 +94,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return *this;
     }
 
-    std::size_t Domain() const override { return n_; }
+    std::size_t Domain() const override { return n_ + (has_time_ ? 1 : 0) + n_param_; }
     std::size_t Range() const override { return n_; }
 
     std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
@@ -87,6 +111,19 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
             for (std::size_t i = 0; i < n_; ++i)
                 for (std::size_t j = 0; j < n_; ++j)
                     df[i] += J[i + n_ * j] * x[j];
+            if (has_time_ && x.size() > n_) {
+                std::vector<Scalar> ft(n_);
+                ft_(point_.data(), ft.data());
+                for (std::size_t i = 0; i < n_; ++i)
+                    df[i] += ft[i] * x[n_];
+            }
+            if (n_param_ > 0 && x.size() > n_ + 1) {
+                std::vector<Scalar> fp(n_ * n_param_);
+                fp_(point_.data(), fp.data());
+                for (std::size_t i = 0; i < n_; ++i)
+                    for (std::size_t j = 0; j < n_param_; ++j)
+                        df[i] += fp[i + n_ * j] * x[n_ + 1 + j];
+            }
             return df;
         }
         throw std::runtime_error(
@@ -99,10 +136,10 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     }
 
     // Continuous-adjoint Jacobian-transpose product J(y)^T lambda via the
-    // analytic Jacobian (autonomous: x = y only).
+    // analytic Jacobian.
     bool adjointProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
                         std::vector<Scalar> &result) const override {
-        if (x.size() != n_ || lambda.size() != n_)
+        if (x.size() != Domain() || lambda.size() != n_)
             return false;
         std::vector<Scalar> J(n_ * n_);
         jac_(x.data(), J.data());
@@ -110,6 +147,21 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         for (std::size_t k = 0; k < n_; ++k)
             for (std::size_t i = 0; i < n_; ++i)
                 result[k] += J[i + n_ * k] * lambda[i]; // J[i + n_*k] = df_i/dy_k
+        return true;
+    }
+
+    // (d f/d p)^T lambda via the analytic parameter derivative (empty result
+    // for autonomous / time-only RHS).
+    bool adjointParameterProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &lambda,
+                                 std::vector<Scalar> &result) const override {
+        if (n_param_ == 0 || !fp_ || x.size() != Domain() || lambda.size() != n_)
+            return false;
+        std::vector<Scalar> fp(n_ * n_param_);
+        fp_(x.data(), fp.data()); // fp[i + n_*j] = df_i/dp_j
+        result.assign(n_param_, Scalar(0));
+        for (std::size_t j = 0; j < n_param_; ++j)
+            for (std::size_t i = 0; i < n_; ++i)
+                result[j] += fp[i + n_ * j] * lambda[i];
         return true;
     }
 
@@ -121,6 +173,10 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         copy->pattern_ = pattern_;
         copy->pattern_valid_ = pattern_valid_;
         copy->jv_ = jv_;
+        copy->ft_ = ft_;
+        copy->has_time_ = has_time_;
+        copy->fp_ = fp_;
+        copy->n_param_ = n_param_;
         return copy;
     }
 
@@ -136,7 +192,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
 
     bool sparseJacobian(const std::vector<Scalar> &x, const SparsityPattern &pattern,
                         std::vector<Scalar> &values) const override {
-        if (!pattern_valid_ || pattern != pattern_ || x.size() != n_)
+        if (!pattern_valid_ || pattern != pattern_ || x.size() != Domain())
             return false;
 
         std::vector<Scalar> J(n_ * n_);
@@ -154,7 +210,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
 
     bool jacobianVectorProduct(const std::vector<Scalar> &x, const std::vector<Scalar> &v,
                                std::vector<Scalar> &result) const override {
-        if (x.size() != n_ || v.size() != n_)
+        if (x.size() != Domain() || v.size() != n_)
             return false;
         result.assign(n_, Scalar(0));
 
@@ -178,7 +234,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     bool jacobianMatrixProduct(const std::vector<Scalar> &x,
                                const std::vector<Scalar> &directions, unsigned int columns,
                                std::vector<Scalar> &result) const override {
-        if (x.size() != n_)
+        if (x.size() != Domain())
             return false;
         if (columns == 0) {
             result.clear();
@@ -214,6 +270,10 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     SparsityPattern pattern_;
     bool pattern_valid_ = false;
     JacobianVector jv_;
+    TimeDeriv ft_;
+    bool has_time_ = false;
+    ParamDeriv fp_;
+    std::size_t n_param_ = 0;
     mutable std::vector<Scalar> point_; // last Forward(0) argument (stateful point)
 };
 

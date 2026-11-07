@@ -693,18 +693,23 @@ bool BDFIntegrator<Scalar>::continuousAdjoint(Scalar *seed_weights, Scalar *adjo
         return false;
     }
 
-    // Backward adjoint ODE d lambda/d tau = J(y(T - tau))^T lambda, integrated
-    // forward in reversed time tau in [0, T] by a fresh BDF integrator.
+    // Backward augmented adjoint ODE, integrated forward in reversed time tau:
+    //   d lambda/d tau = J(y(T-tau))^T lambda
+    //   d mu/d tau     = (d f/d p)^T lambda,  mu(T) = 0
+    // giving lambda(0) = d g/d y0 and mu(0) = d g/d p.
     detail::ContinuousAdjointRHS<Scalar> adjRHS(*RHS, trajectory_, numOfSpecies, t_ende,
                                                 parameter);
 
-    std::vector<Scalar> lam0(numOfSpecies);
+    // Augmented initial state (lambda(T), mu(T)) = (w, 0).
+    std::vector<Scalar> lam0(numOfSpecies + sizeOfParameter, (Scalar)0.0);
     for (unsigned int i = 0; i < numOfSpecies; i++)
         lam0[i] = seed_weights[i]; // lambda(T) = w = d g / d y(T)
 
-    std::vector<Scalar> abs_err(numOfSpecies);
+    std::vector<Scalar> abs_err(numOfSpecies + sizeOfParameter);
     for (unsigned int i = 0; i < numOfSpecies; i++)
         abs_err[i] = absolut_error[i];
+    for (unsigned int i = 0; i < sizeOfParameter; i++)
+        abs_err[numOfSpecies + i] = absolut_error[0]; // same tolerance for mu
 
     BDFIntegrator<Scalar> adj(adjRHS);
     if (!adj.resetIntegration(lam0.data(), 0.0, NULL, max_StepLength, relative_error,
@@ -715,13 +720,14 @@ bool BDFIntegrator<Scalar>::continuousAdjoint(Scalar *seed_weights, Scalar *adjo
 
         return false;
     }
-    adj.getSolutionVector(adjoint_y0); // lambda(0) = d g / d y0
 
-    // Parameter sensitivity (d g/d p = int_0^T lambda^T d f/d p dt) is not yet
-    // accumulated along the backward pass; leave it zero for now (honest scope).
+    std::vector<Scalar> sol(numOfSpecies + sizeOfParameter);
+    adj.getSolutionVector(sol.data());
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        adjoint_y0[i] = sol[i]; // lambda(0) = d g / d y0
     if (adjoint_parameter != nullptr)
         for (unsigned int i = 0; i < sizeOfParameter; i++)
-            adjoint_parameter[i] = (Scalar)0;
+            adjoint_parameter[i] = sol[numOfSpecies + i]; // mu(0) = d g / d p
 
     return true;
 }
