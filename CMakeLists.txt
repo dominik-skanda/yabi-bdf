@@ -136,6 +136,26 @@ if(YABI_USE_GINKGO)
     endif()
 endif()
 
+option(YABI_USE_CUDSS "Build the cuDSS sparse direct solver adapter + test (T36d)" OFF)
+if(YABI_USE_CUDSS)
+    find_path(CUDSS_INCLUDE_DIR cudss.h
+        PATHS $ENV{HOME}/.local/opt/cudss /usr/local/include /usr/include PATH_SUFFIXES include)
+    find_library(CUDSS_LIBRARY cudss
+        PATHS $ENV{HOME}/.local/opt/cudss PATH_SUFFIXES lib lib64)
+    # cuDSS needs CUDA (cudart) for the host-side cudaMalloc/cudaMemcpy.
+    find_path(CUDA_INCLUDE_DIR cuda_runtime.h
+        PATHS /usr/local/cuda-12.6/include /usr/local/cuda/include $ENV{CUDA_HOME} PATH_SUFFIXES include)
+    find_library(CUDART_LIBRARY cudart
+        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME} PATH_SUFFIXES lib64 lib)
+    if(CUDSS_INCLUDE_DIR AND CUDSS_LIBRARY AND CUDA_INCLUDE_DIR AND CUDART_LIBRARY)
+        get_filename_component(CUDSS_LIBRARY_DIR "${CUDSS_LIBRARY}" DIRECTORY)
+        message(STATUS "cuDSS found: ${CUDSS_INCLUDE_DIR} (lib: ${CUDSS_LIBRARY_DIR})")
+    else()
+        message(FATAL_ERROR
+            "YABI_USE_CUDSS=ON but cuDSS or CUDA was not found (see README for provisioning).")
+    endif()
+endif()
+
 # ---------------------------------------------------------------------------
 # Library
 # ---------------------------------------------------------------------------

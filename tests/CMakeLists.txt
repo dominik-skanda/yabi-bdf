@@ -110,6 +110,18 @@ if(YABI_USE_GINKGO)
     set_tests_properties(ginkgo_solver PROPERTIES LABELS "component;ginkgo")
 endif()
 
+# T36d — external cuDSS sparse direct solver adapter, registered only when
+# YABI_USE_CUDSS=ON, so the default build stays dependency-free.
+if(YABI_USE_CUDSS)
+    add_executable(yabi_test_cudss_solver
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/cudss_solver.cpp")
+    target_include_directories(yabi_test_cudss_solver PRIVATE ${CUDSS_INCLUDE_DIR} ${CUDA_INCLUDE_DIR})
+    target_link_libraries(yabi_test_cudss_solver PRIVATE yabi ${CUDSS_LIBRARY} ${CUDART_LIBRARY})
+    target_link_options(yabi_test_cudss_solver PRIVATE "-Wl,-rpath,${CUDSS_LIBRARY_DIR}")
+    add_test(NAME cudss_solver COMMAND yabi_test_cudss_solver)
+    set_tests_properties(cudss_solver PROPERTIES LABELS "component;cudss")
+endif()
+
 # ---------------------------------------------------------------------------
 # System tier — the mathematical testbench.
 # ---------------------------------------------------------------------------

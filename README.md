@@ -622,7 +622,23 @@ Build with `-DYABI_USE_GINKGO=ON`. Provision Ginkgo from its official source
 (cmake + install to `~/.local/opt/ginkgo`, OpenMP backend). It uses the OpenMP
 (CPU) backend, so it works without a GPU; the CUDA backend is the same adapter
 with a `CudaExecutor` (and a supported GPU arch). `tests/component/ginkgo_solver.cpp`
-cross-checks it to `1.1e-16`. Further adapters (cuDSS, …) reuse the same
+cross-checks it to `1.1e-16`.
+
+The third adapter is **cuDSS** (NVIDIA's sparse *direct* solver, via the
+`nvidia-cudss-cu12` wheel):
+
+```cpp
+#include <yabi/bdf_integrator.hpp>
+#include <yabi/cudss_linear_solver.hpp>
+
+integrator.setLinearSolver(new yabi::CudssLinearSolver<double>()); // general sparse LU
+```
+
+Build with `-DYABI_USE_CUDSS=ON`. Provision it with `pip download
+nvidia-cudss-cu12` + extract to `~/.local/opt/cudss` (never vendored). cuDSS has
+real `ANALYSIS/FACTORIZATION/SOLVE` phases, so it matches the BDF
+factorize-once/solve-many pattern; `tests/component/cudss_solver.cpp`
+cross-checks it to `1.7e-18`. All three adapters reuse the same
 `ExternalSparseSolver` base — the libraries are **never vendored**, only the
 thin adapter + CMake detection live in this repo.
 
