@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 #include <yabi/abstract_rhs.hpp>
