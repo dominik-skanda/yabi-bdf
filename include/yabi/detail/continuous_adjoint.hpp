@@ -354,6 +354,81 @@ template <typename Scalar> class SecondOrderTangentRHS : public AbstractRHS<Scal
     std::vector<Scalar> parameter_;
 };
 
+// The k-th-order tangent ODE as a time-dependent AbstractRHS (T40), so the
+// existing BDF integrates S_k' = J(y) S_k + source_k forward, where
+// source_k = orderKDirectional(k, y, [S_1..S_{k-1}, S_k]) is the k-th-order
+// nonlinear source (excluding the linear J S_k).  y and S_1..S_{k-1} come from
+// recorded Trajectories; S_k is the RHS's own state.
+template <typename Scalar> class KthOrderTangentRHS : public AbstractRHS<Scalar> {
+  public:
+    KthOrderTangentRHS(const AbstractRHS<Scalar> &base, const Trajectory<Scalar> &trajectory,
+                       const std::vector<Trajectory<Scalar>> &lower, std::size_t k, std::size_t n,
+                       Scalar T, const std::vector<Scalar> &parameter)
+        : base_(base.clone()), trajectory_(trajectory), lower_(lower), k_(k), n_(n), T_(T),
+          parameter_(parameter) {
+        (void)T_; // forward time
+    }
+
+    std::size_t Domain() const override { return n_ + 1; } // (S_k, t)
+    std::size_t Range() const override { return n_; }
+
+    std::vector<Scalar> Forward(std::size_t p, const std::vector<Scalar> &x) const override {
+        const Scalar t = x[n_];
+        std::vector<Scalar> y(n_);
+        trajectory_.interpolate(t, y.data(), n_);
+
+        std::vector<Scalar> arg(base_->Domain());
+        std::size_t j = 0;
+        for (std::size_t i = 0; i < n_; ++i)
+            arg[j++] = y[i];
+        if (j < base_->Domain())
+            arg[j++] = t;
+        for (std::size_t i = 0; i < parameter_.size(); ++i)
+            arg[j++] = parameter_[i];
+
+        base_->Forward(0, arg);
+        std::vector<Scalar> dx(base_->Domain(), Scalar(0));
+        for (std::size_t i = 0; i < n_; ++i)
+            dx[i] = x[i]; // state direction = S_k (or dS_k for the Jacobian sweep)
+        std::vector<Scalar> Jx = base_->Forward(1, dx); // J * S_k
+
+        if (p == 0) {
+            // directions = [S_1 .. S_{k-1} (from trajectories), S_k (from x)]
+            std::vector<std::vector<Scalar>> S(k_);
+            for (std::size_t m = 0; m + 1 < k_; ++m) {
+                S[m].resize(n_);
+                lower_[m].interpolate(t, S[m].data(), n_);
+            }
+            S[k_ - 1] = std::vector<Scalar>(x.begin(), x.begin() + n_);
+
+            std::vector<Scalar> src;
+            if (!base_->orderKDirectional(k_, arg, S, src))
+                throw std::runtime_error("KthOrderTangentRHS: orderKDirectional unsupported");
+            for (std::size_t i = 0; i < n_; ++i)
+                Jx[i] += src[i]; // S_k' = J S_k + source_k
+        }
+        return Jx;
+    }
+
+    std::vector<Scalar> Reverse(std::size_t, const std::vector<Scalar> &) const override {
+        return {};
+    }
+    std::size_t size_order() const override { return 1; }
+    void capacity_order(std::size_t) override {}
+    AbstractRHS<Scalar> *clone() const override {
+        return new KthOrderTangentRHS(*base_, trajectory_, lower_, k_, n_, T_, parameter_);
+    }
+
+  private:
+    std::unique_ptr<AbstractRHS<Scalar>> base_;
+    Trajectory<Scalar> trajectory_;
+    std::vector<Trajectory<Scalar>> lower_; // S_1 .. S_{k-1}
+    std::size_t k_;
+    std::size_t n_;
+    Scalar T_;
+    std::vector<Scalar> parameter_;
+};
+
 } // namespace detail
 } // namespace yabi
 

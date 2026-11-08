@@ -154,6 +154,50 @@ template <typename Scalar> class CppADRHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    bool orderKDirectional(std::size_t k, const std::vector<Scalar> &x,
+                           const std::vector<std::vector<Scalar>> &S,
+                           std::vector<Scalar> &result) const override {
+        if (k < 2 || x.size() != fun_->Domain())
+            return false;
+        const std::size_t D = fun_->Domain();
+        const std::size_t n = fun_->Range();
+        for (std::size_t m = 0; m < k; ++m)
+            if (S[m].size() != n)
+                return false;
+
+        fun_->capacity_order(k);
+        // Full-Taylor jet: xq[(k+1)*j + m] = m-th Taylor coefficient of variable
+        // j.  x^(0) = x; x^(m) = S_m / m! on the state block, 0 on time/params.
+        CppAD::vector<Scalar> xq(D * (k + 1), Scalar(0));
+        for (std::size_t j = 0; j < D; ++j)
+            xq[(k + 1) * j + 0] = x[j];
+        Scalar fact = Scalar(1);
+        for (std::size_t m = 1; m <= k; ++m) {
+            fact *= (Scalar)m;
+            for (std::size_t i = 0; i < n; ++i)
+                xq[(k + 1) * i + m] = S[m - 1][i] / fact;
+        }
+        CppAD::vector<Scalar> yq = fun_->Forward(k, xq); // Range()*(k+1) entries
+
+        // J(x) * S_k via a fresh sequential sweep (Forward(0) resets the point).
+        CppAD::vector<Scalar> xv(D);
+        for (std::size_t j = 0; j < D; ++j)
+            xv[j] = x[j];
+        fun_->Forward(0, xv);
+        CppAD::vector<Scalar> sk(D, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            sk[i] = S[k - 1][i];
+        CppAD::vector<Scalar> Jsk = fun_->Forward(1, sk);
+
+        Scalar kfac = Scalar(1);
+        for (std::size_t m = 1; m <= k; ++m)
+            kfac *= (Scalar)m;
+        result.assign(n, Scalar(0));
+        for (std::size_t i = 0; i < n; ++i)
+            result[i] = kfac * yq[(k + 1) * i + k] - Jsk[i]; // k! y^(k) - J S_k
+        return true;
+    }
+
     bool taylorForward(std::size_t p, const std::vector<Scalar> &x,
                        std::vector<Scalar> &y) const override {
         if (x.size() != fun_->Domain() * (p + 1))

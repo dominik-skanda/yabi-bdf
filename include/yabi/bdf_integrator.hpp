@@ -132,6 +132,15 @@ template <class Scalar> class BDFIntegrator {
     // to have run and the backend to provide a second-order directional
     // derivative hook (secondOrderDirectional).
     bool secondOrderForward(Scalar *seed_direction, Scalar *second_derivative);
+    // Higher-order *forward* sensitivity (T40): d^k y / d tau^k in the seed
+    // direction for arbitrary k >= 1, computed stably for long/stiff problems
+    // (the stable complement to forward(k), which is A-stability-bound at
+    // order >= 3).  k = 1 is the first-order tangent; k = 2 coincides with
+    // secondOrderForward.  For k >= 2 the backend must provide the k-th-order
+    // directional source via AbstractRHS::orderKDirectional (CppAD automatic,
+    // pure UserODERHS via the setOrderKDirectional analytic hook; fails loudly
+    // without it).  Requires performIntegration to have run.
+    bool forwardOrder(unsigned int k, Scalar *seed_direction, Scalar *kth_derivative);
     bool setStepSettings(Scalar NEWTON_STEP_REDUCTION, Scalar STEP_NOT_ACCEPTED_REDUCTION,
                          Scalar STEP_NOT_ACCEPTED_SAVETY_STEP, Scalar ORDER_STAY_SAVETY_STEP,
                          Scalar ORDER_UP_SAVETY_STEP, Scalar ORDER_DOWN_SAVETY_STEP,

@@ -845,6 +845,84 @@ bool BDFIntegrator<Scalar>::secondOrderForward(Scalar *seed_direction, Scalar *s
     return true;
 }
 
+// Higher-order forward sensitivity (T40): d^k y / d tau^k in the seed direction.
+
+template <typename Scalar>
+bool BDFIntegrator<Scalar>::forwardOrder(unsigned int k, Scalar *seed_direction,
+                                         Scalar *kth_derivative) {
+    if (k < 1)
+        return false;
+    if (!isIntegrattionPerformed) {
+        YABI_LOG_ERROR("forwardOrder: run performIntegration first!");
+        return false;
+    }
+    if (trajectory_.empty()) {
+        YABI_LOG_ERROR("forwardOrder: no forward trajectory recorded!");
+        return false;
+    }
+
+    // Probe the backend's order-k source capability up front so an unsupported
+    // order fails loudly (returns false) instead of throwing mid-integration.
+    if (k >= 2) {
+        std::vector<Scalar> px(RHS->Domain(), (Scalar)0);
+        std::vector<std::vector<Scalar>> pS(k, std::vector<Scalar>(numOfSpecies, (Scalar)0));
+        std::vector<Scalar> pr;
+        if (!RHS->orderKDirectional(k, px, pS, pr)) {
+            YABI_LOG_ERROR("forwardOrder: backend cannot provide the order-", k,
+                           " directional source (orderKDirectional); supply an analytic hook, or "
+                           "use the CppAD backend / the tools/ generator.");
+            return false;
+        }
+    }
+
+    std::vector<Scalar> abs_err(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        abs_err[i] = absolut_error[i];
+
+    // 1. First-order tangent S1' = J(y) S1, S1(0) = seed.
+    detail::TangentRHS<Scalar> tanRHS(*RHS, trajectory_, numOfSpecies, t_ende, parameter);
+    std::vector<Scalar> s0(numOfSpecies);
+    for (unsigned int i = 0; i < numOfSpecies; i++)
+        s0[i] = seed_direction[i];
+
+    BDFIntegrator<Scalar> tangent(tanRHS);
+    if (!tangent.resetIntegration(s0.data(), 0.0, NULL, max_StepLength, relative_error,
+                                  abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+        return false;
+    if (!tangent.performIntegration(t_ende, 10000000)) {
+        YABI_LOG_ERROR("forwardOrder: first-order tangent integration failed!");
+        return false;
+    }
+    if (k == 1) {
+        tangent.getSolutionVector(kth_derivative); // S1(t_end) = d y / d tau
+        return true;
+    }
+
+    // 2. Higher-order tangents S_m' = J S_m + source_m, S_m(0) = 0, m = 2..k.
+    std::vector<detail::Trajectory<Scalar>> lower;
+    lower.push_back(tangent.trajectory_); // S1
+    std::vector<Scalar> sm0(numOfSpecies, (Scalar)0.0);
+
+    for (unsigned int m = 2; m <= k; m++) {
+        detail::KthOrderTangentRHS<Scalar> kthRHS(*RHS, trajectory_, lower, m, numOfSpecies,
+                                                  t_ende, parameter);
+        BDFIntegrator<Scalar> kth(kthRHS);
+        if (!kth.resetIntegration(sm0.data(), 0.0, NULL, max_StepLength, relative_error,
+                                  abs_err.data(), false, false, NULL, NULL, NULL, NULL, 0))
+            return false;
+        if (!kth.performIntegration(t_ende, 10000000)) {
+            YABI_LOG_ERROR("forwardOrder: order-", m, " tangent integration failed!");
+            return false;
+        }
+        if (m == k) {
+            kth.getSolutionVector(kth_derivative); // S_k(t_end) = d^k y / d tau^k
+            return true;
+        }
+        lower.push_back(kth.trajectory_); // S_m, reused by the next order
+    }
+    return false; // unreachable
+}
+
 // Integrator Configuration
 
 template <typename Scalar>

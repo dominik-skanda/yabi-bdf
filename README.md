@@ -311,6 +311,47 @@ It needs a second-order directional-derivative hook: CppAD provides it via a
 `Forward(2)` sweep automatically; the pure backend adds
 `setSecondOrderDirectional(sod)`.
 
+Higher-order forward sensitivity is `forwardOrder(k, seed, result)` — it returns
+`d^k y/dτ^k` for arbitrary `k >= 1`, stably for long/stiff problems (the stable
+complement to `forward(k)`, which is A-stability-bound at order >= 3):
+
+```cpp
+double direction[2] = {1.0, 0.0}, kth[2];
+integrator.forwardOrder(3, direction, kth);
+// kth[i] = d^3 y_i / d tau^3  along `direction`  (k = 2 coincides with secondOrderForward)
+```
+
+For `k >= 2` it needs the k-th-order directional *source* of the RHS via
+`AbstractRHS::orderKDirectional`: CppAD provides it automatically (full-Taylor
+`Forward`); the pure backend adds `setOrderKDirectional(okd)` and `forwardOrder`
+fails loudly without it.  No finite differences anywhere — the pure hook is
+exact (analytic), and `tools/generate_derivatives.py` can emit it for you
+(see below).
+
+### Generating higher-order derivatives (pure mode, optional tool)
+
+`tools/generate_derivatives.py` is a **decoupled, optional** SymPy code generator
+for the exact higher-order sources.  It is not a build dependency and the solver
+never calls it — it emits plain C++ in the `UserODERHS` hook signatures, which you
+wire in by hand:
+
+```sh
+python3 tools/generate_derivatives.py            # print the generated header
+python3 tools/generate_derivatives.py --check    # verify the sources numerically
+```
+
+```cpp
+#include "generated_myode.hpp"   // the emitted header
+yabi::UserODERHS<double> rhs(n, generated::f, generated::jacobian);
+rhs.setOrderKDirectional(generated::orderKDirectional);
+```
+
+Edit the `N` / `Y` / `F` / `MAX_ORDER` block at the top of the script to describe
+your ODE, then regenerate.  Requires SymPy (`pip install --user
+--break-system-packages sympy`; see PEP 668).  `tests/system/generated_cubic.hpp`
+is a committed example of its output, exercised by
+`tests/system/39_generated_higher_order.cpp`.
+
 ### Simultaneous (variational) sensitivities
 
 Pass seed directions and error controls directly to `resetIntegration`:
@@ -389,8 +430,8 @@ continuous* (how the sensitivity is propagated).
 |---|---|---|---|
 | `forward(q)` | forward (state) | discrete IND (replay of frozen step Jacobians) | order 1 yes; order ≥ 3 diverges |
 | `reverse(q)` | reverse (adjoint) | discrete IND | order 1 yes; order ≥ 3 diverges |
-| `continuousAdjoint` / `secondOrderAdjoint` | reverse | continuous ODE `λ' = -Jᵀλ` (re-integrated) | **yes, all orders** |
-| simultaneous seeds / `secondOrderForward` | forward | continuous ODE `S' = J·S` (+ `H·S·S`) | **yes, all orders** |
+| `continuousAdjoint` / `secondOrderAdjoint` | reverse | continuous ODE `λ' = -Jᵀλ` (re-integrated) | **yes, orders 1–2** |
+| simultaneous seeds / `secondOrderForward` / `forwardOrder(k)` | forward | continuous ODE `S' = J·S` (+ higher-order source) | **yes, arbitrary order** |
 
 The discrete (IND) methods are *exact for the discretization* and are the
 fastest and most accurate choice on short intervals — but they replay frozen
@@ -405,9 +446,10 @@ full integration.
 | Your situation | Use |
 |---|---|
 | General, short interval, need accuracy + speed | `forward(1)` / `reverse(1)` (IND) |
-| Long/stiff interval, forward sensitivity | simultaneous seeds (1st) or `secondOrderForward` (2nd) |
+| Long/stiff interval, forward sensitivity | simultaneous seeds (1st) or `secondOrderForward`/`forwardOrder(k)` (2nd+) |
 | Long/stiff interval, reverse sensitivity | `continuousAdjoint` (1st) or `secondOrderAdjoint` (2nd) |
 | Higher-order (≥ 3) derivative on a short interval | `forward(q)` / `reverse(q)` (full-Taylor replay) |
+| Higher-order (≥ 3) derivative, long/stiff, forward | `forwardOrder(k)` (continuous, stable) |
 
 **Backend-agnostic contract** — every method works identically under CppAD
 (`YABI_USE_CPPAD=ON`) and pure mode (`YABI_USE_CPPAD=OFF`):
@@ -419,9 +461,13 @@ full integration.
   or `Forward(2)` sweep; pure mode supplies the analytic
   `setHessianVectorProduct(hv)` (adjoint) or `setSecondOrderDirectional(sod)`
   (forward) hooks.
-- No finite differences are used anywhere. The only asymmetry is that
-  `forward(order ≥ 2)` / `reverse(order ≥ 2)` (the *discrete* higher-order
-  replay) require the CppAD full-Taylor backend and fail loudly in pure mode.
+- Higher-order (≥ 3) forward: CppAD provides the k-th-order source via the
+  full-Taylor `Forward` automatically; pure mode supplies the analytic
+  `setOrderKDirectional(okd)` hook (or generates it — see above).
+- No finite differences are used anywhere. The deliberate gaps are: higher-order
+  *continuous adjoint* (≥ 3) is not provided (nothing consumes a 3rd-order
+  adjoint), and the *discrete* higher-order replay (`forward(q)`/`reverse(q)`,
+  `q ≥ 2`) requires the CppAD full-Taylor backend and fails loudly in pure mode.
 
 **Rejected alternatives** (recorded so they are not re-introduced): no
 auto-patching of IND (a diverged replay is reported, not silently corrected),

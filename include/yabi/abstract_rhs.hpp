@@ -111,6 +111,26 @@ template <typename Scalar> class AbstractRHS {
         return false;
     }
 
+    // k-th-order *nonlinear source* of the vector RHS (T40): the k-th-order
+    // directional derivative of f along the jet, minus the linear term J*S_k.
+    // With S[0..k-1] = S_1 .. S_k (each a state direction, size Range()) and
+    //   y(tau) = y + S_1 tau + (S_2/2!) tau^2 + ... + (S_k/k!) tau^k,
+    //   F(tau) = f(y(tau)),
+    // the result is  result = F^(k)(0) - J(x) S_k = k! * y^(k) - J S_k, which
+    // involves only S_1..S_{k-1} (the multinomial terms of order k with >= 2
+    // factors).  k >= 2.  order 2 == secondOrderDirectional (H·v·v); order 3 is
+    // 3 H(S_1,S_2) + T(S_1,S_1,S_1).  Backends that cannot form it (no tape, no
+    // analytic hook) return false.
+    virtual bool orderKDirectional(std::size_t k, const std::vector<Scalar> &x,
+                                   const std::vector<std::vector<Scalar>> &S,
+                                   std::vector<Scalar> &result) const {
+        (void)k;
+        (void)x;
+        (void)S;
+        (void)result;
+        return false;
+    }
+
     // Sparsity of the state Jacobian: the (Range x Range) block df_i/dy_j,
     // with i,j < Range().  x in sparseJacobian() is the full Domain() argument
     // (state, time, parameters), exactly as passed to Forward().

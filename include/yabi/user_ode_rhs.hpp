@@ -50,6 +50,11 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
                                              const Scalar *v, Scalar *result)>; // n entries
     // Second-order directional derivative of the vector RHS: H(y) * v * v, n entries.
     using SecondOrderDir = std::function<void(const Scalar *y, const Scalar *v, Scalar *result)>;
+    // k-th-order nonlinear source of the vector RHS: result = k! y^(k) - J(x) S_k,
+    // n entries.  x is the full Domain() argument; S holds k state directions,
+    // flattened column-major as S[m*n + i] = S_{m+1}[i] (m = 0..k-1).
+    using OrderKDirectional =
+        std::function<void(unsigned k, const Scalar *x, const Scalar *S, Scalar *result)>;
 
     UserODERHS(std::size_t n, ODE f, Jacobian jac) : n_(n), f_(std::move(f)), jac_(std::move(jac)) {}
 
@@ -82,6 +87,14 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     // second-order simultaneous/forward sensitivity (T27), n entries.
     UserODERHS &setSecondOrderDirectional(SecondOrderDir sod) {
         sod_ = std::move(sod);
+        return *this;
+    }
+
+    // Optional analytic k-th-order nonlinear source (T40) for higher-order
+    // simultaneous/forward sensitivity, n entries.  When unset, forwardOrder(k)
+    // (k >= 2) fails loudly rather than falling back.
+    UserODERHS &setOrderKDirectional(OrderKDirectional okd) {
+        okd_ = std::move(okd);
         return *this;
     }
 
@@ -206,6 +219,24 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return true;
     }
 
+    // k-th-order nonlinear source k! y^(k) - J S_k via the analytic hook.
+    bool orderKDirectional(std::size_t k, const std::vector<Scalar> &x,
+                           const std::vector<std::vector<Scalar>> &S,
+                           std::vector<Scalar> &result) const override {
+        if (k < 2 || !okd_ || x.size() != Domain())
+            return false;
+        for (const auto &s : S)
+            if (s.size() != n_)
+                return false;
+        std::vector<Scalar> Sflat(k * n_);
+        for (std::size_t m = 0; m < k; ++m)
+            for (std::size_t i = 0; i < n_; ++i)
+                Sflat[m * n_ + i] = S[m][i];
+        result.assign(n_, Scalar(0));
+        okd_((unsigned)k, x.data(), Sflat.data(), result.data());
+        return true;
+    }
+
     std::size_t size_order() const override { return 1; }
     void capacity_order(std::size_t) override {}
 
@@ -220,6 +251,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         copy->n_param_ = n_param_;
         copy->hv_ = hv_;
         copy->sod_ = sod_;
+        copy->okd_ = okd_;
         return copy;
     }
 
@@ -319,6 +351,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     std::size_t n_param_ = 0;
     HessianVector hv_;
     SecondOrderDir sod_;
+    OrderKDirectional okd_;
     mutable std::vector<Scalar> point_; // last Forward(0) argument (stateful point)
 };
 
