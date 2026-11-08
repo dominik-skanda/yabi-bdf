@@ -22,6 +22,9 @@ sensitivity analysis through CppAD automatic differentiation.
   (variational) sensitivities.
 - **Stiff problems**: implicit corrector with Newton iteration, Jacobian reuse,
   and LAPACK linear solves.
+- **Python bindings**: `import yabi` — zero-copy NumPy I/O with an analytic
+  Jacobian (v1, analytic path; CppAD AD and sensitivities in Python are the next
+  milestone — see "Python bindings" below).
 - **C++17**, BLAS/LAPACK, and an external CppAD installation.
 
 ## Quick Verification
@@ -163,6 +166,9 @@ it.get_solution(y_out)                            # zero-copy write into y_out
 ```
 
 `bindings/python/test_yabi.py` is the Brusselator smoke test.
+
+Not yet exposed in Python: sensitivities (forward/reverse/adjoint), time-dependent
+RHS, and the CppAD auto-diff path — the next milestone (T38 autograd hooks).
 
 ## Usage
 
