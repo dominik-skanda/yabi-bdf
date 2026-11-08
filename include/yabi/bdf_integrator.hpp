@@ -148,6 +148,12 @@ template <class Scalar> class BDFIntegrator {
     bool setNewtonSettings(Scalar NEWTON_SAFETY, Scalar NEWTON_CONVERGED,
                            Scalar ACCEPT_NEWTON_CONVERGENCE_RATE, unsigned int allowedNEWTON,
                            unsigned int MAXNEWTONITERATION, bool updateEveryP);
+    // Opt-in damped Newton (T45): backtrack (halve) the Newton correction while
+    // the BDF residual fails to decrease, up to `max_backtracks` times.  Applies
+    // to the plain state solve (non-taped); off by default so the historical
+    // full-step behaviour is preserved bit-for-bit.  Returns false if
+    // `max_backtracks == 0`.
+    bool setNewtonLineSearch(bool enable, unsigned int max_backtracks = 6);
     bool setAlgorithmSettings(unsigned int MAXORDER, Scalar MACHINEPRECISION, bool HITSOLUTION,
                               unsigned int ERROR_WEIGHTS_INDEX);
     // Force a fixed BDF order (1..6): sets both MINORDER and MAXORDER to q, so

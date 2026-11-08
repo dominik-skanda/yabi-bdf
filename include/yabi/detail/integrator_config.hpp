@@ -31,6 +31,11 @@ template <typename Scalar> struct IntegratorConfig {
     Scalar ACCEPT_NEWTON_CONVERGENCE_RATE = (Scalar)0.30;
     unsigned int allowedNEWTON = 10;
     unsigned int MAXNEWTONITERATION = 3;
+    // Opt-in damped Newton: backtrack (halve) the Newton correction while the
+    // BDF residual fails to decrease, up to NEWTON_LINE_SEARCH_MAX times.  Off by
+    // default (preserves the historical full-step behaviour bit-for-bit).
+    bool NEWTON_LINE_SEARCH = false;
+    unsigned int NEWTON_LINE_SEARCH_MAX = 6;
 
     unsigned int MAXORDER = 6;
     unsigned int MINORDER = 1;

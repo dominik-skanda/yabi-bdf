@@ -230,12 +230,81 @@ integrator.getCurrentOrder();       // read the order actually used
 The step controller is the original 2011 BDF algorithm with one small, deliberate
 addition for stability: on a rejected step it estimates the local truncation error at the
 next-lower order (from the highest Nordsieck term) and reduces the order when that gives a
-smaller or already-acceptable error. This DASSL/LSODE-style order reduction lets the
+smaller or already-acceptable error. This order reduction lets the
 integrator recover from stiff-oscillatory problems — e.g. the Oregonator's relaxation
 oscillations, where high-order BDF is unstable at *any* step size. It is a **no-op for
 well-behaved problems** (they accept on the first attempt, so no order reduction ever fires),
 and each reduction is recorded in the sensitivity tape so forward/reverse replays reconstruct
 the correct order sequence.
+
+### Extreme-stiffness behaviour (EMEP) — documented, with a damped-Newton remedy
+
+On the hardest stiff benchmarks (the CWI "Test Set for IVP Solvers" **EMEP** problem — 66
+species, stiffness ratio ~1e14) the plain defaults can stall.  Instrumentation (T45) showed
+the cause: at the dawn/dusk transient the Newton matrix `P = I - (h/l)·J` is ill-conditioned,
+so the Newton iteration converges only *linearly* (~0.85× residual per iteration), and at the
+higher BDF orders the order-reduction heuristic misfires (its order-1 error estimate is
+unreliable at this stiffness).  Two remedies address the two effects:
+
+```cpp
+integrator.setFixedOrder(4);               // A(α)-stable (α≈73°) + best-conditioned J
+integrator.setNewtonSettings(-1, 0.01, 0.30, 25, 25, true); // fresh J each iteration
+integrator.setNewtonLineSearch(true, 6);   // damped Newton: backtrack on residual overshoot
+```
+
+`setFixedOrder(4)` caps the BDF order at 4, where the method is A(α)-stable (order 4 α≈73°;
+order 5 ≈52°, order 6 ≈18°) and the Newton matrix is best conditioned — the standard stiff-ODE
+practice (Hairer & Wanner §V).  With it EMEP matches its CWI reference to ~5e-6 (see
+`tests/system/45_emep.cpp`).
+
+`setNewtonLineSearch(true)` enables a **damped Newton** (backtracking line search): when the full
+Newton step would increase the BDF residual, the correction is halved until the residual
+decreases — the standard fix for Newton overshoot (Nocedal & Wright §11; Hairer & Wanner §IV.8).  It
+is a **mathematical no-op where Newton does not overshoot** (the full step is accepted), so it is
+**opt-in and off by default** — the one extra residual evaluation reorders floating-point, so the
+BASELINE anchors stay byte-identical only with it off.  On EMEP it removes the remaining overshoot (the
+"reducing BDF order"/"relaxing step size" messages drop 14 → 0).
+
+This is an honest limitation: the BDF core is **sound** (every BASELINE anchor is byte-identical
+and every benchmark matches an independent reference), but its step/order control is not as
+battle-tuned as the reference production solvers on the very hardest stiff problems — the damped
+Newton addresses *overshoot*, while the dominant *slow linear convergence* from ill-conditioning still
+needs the order cap.  References: Hairer, Nørsett & Wanner, *Solving ODEs I/II*; Gear (1971),
+*Numerical Initial Value Problems in ODEs*; Byrne & Hindmarsh (1975); Nocedal & Wright, *Numerical
+Optimization* §11; Mazzia et al., "Test Set for IVP Solvers".
+
+### Relationship to the dissertation (method provenance)
+
+The mathematical formulation is the [dissertation by Dominik Skanda](https://freidok.uni-freiburg.de/data/8787)
+(University of Freiburg).  **That method is correct and remains the baseline**: a variable-order,
+variable-step BDF corrector with a Milne (corrector–predictor) local-error estimator and an
+**error-per-step (EPS)** acceptance test — the dissertation's original estimator, which is *kept* (a
+different convention, error-per-unit-step, was assessed in T22 and rejected for this controller; see below).
+
+Two **deliberate, literature-referenced robustness additions** sit on top of that baseline.  Both are
+**no-ops on well-behaved problems** (they fire only on the pathological cases they exist for), so the
+BASELINE anchors are byte-identical to the dissertation method for the standard benchmarks:
+
+1. **Order reduction on a rejected step** — *[§ "Step-controller adaptation" above]*.  Source:
+   Gear (1971); Byrne & Hindmarsh (1975).
+2. **Damped Newton** (backtracking line search, opt-in) — *[§ "Extreme-stiffness behaviour" above]*.
+   Source: Nocedal & Wright, *Numerical Optimization* §11; Hairer & Wanner §IV.8.
+
+Techniques from the literature that were **investigated and deliberately not adopted** (each was
+spike-tested and reverted because it trades one benchmark against another), so the method's core stays
+the dissertation's:
+
+| technique | source | why not adopted |
+|---|---|---|
+| error-per-unit-step (EPUS) | Hairer & Wanner §III.7 | collapses the step on Robertson (T22) |
+| order-selection bias | Byrne & Hindmarsh (1975) | does not remove EMEP's failure (T46) |
+| fixed Newton give-up rate (`rate > 0.9`) | Hairer & Wanner §IV.8 | fixes EMEP but regresses the Oregonator (T47) |
+
+The honest bottom line is stated above: the core is **sound and correct**, and the two adopted
+additions are the *robustness* part — they make the method recover where the dissertation method (and,
+equally, a naive BDF) would stall, and each is traceable to the named literature.  Combining these
+standard techniques further (rate-based Newton termination, error-per-unit-step, and a coordinated
+Jacobian-refresh strategy) into the controller is a larger, separately-scoped effort.
 
 ## Sensitivity API
 

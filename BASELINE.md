@@ -17,14 +17,14 @@ difference is fully explained (no unexplained regression):
 | `15_oregonator` | `t=1 => (112559.4758, …)` | identical |
 
 The change is introduced by the **first commit after the initial one**, `8f5492c`
-`fix(step-control): reduce BDF order on rejected steps (DASSL/LSODE-style)` — an intentional correctness fix. Every
+`fix(step-control): reduce BDF order on rejected steps` — an intentional correctness fix. Every
 commit in the history was built and run: there are exactly two value regimes, the switch occurs at `8f5492c`, and no
 later commit (through `main`) changes either anchor.
 
 **Do not read the smaller initial error as “better”.** The initial `yabi_basic` error (`4.33e-10`) is *smaller* than the
 baseline (`6.53e-10`), but both are ~`1e-10` absolute against `y(2) ≈ 0.368` (≈0.6 ppm) — at the requested tolerance
 floor. A different sequence of accepted steps/orders simply lands closer by coincidence; global error is not minimised
-by the controller. The current algorithm is the correct one (order reduction on rejection per DASSL/LSODE), so the
+by the controller. The current algorithm is the correct one (order reduction on rejection), so the
 baseline is `main` from `8f5492c` onward, **not** `cb357e3`. Testbenches `31`/`32` did not exist at the initial commit,
 and `28` was a different (framework-only) program, so they have no initial-commit counterpart.
 
@@ -103,3 +103,16 @@ theta=-0.25 t=2.998587095001 y=0.049857462162821 exact=0.049857462484014 err=3.2
 ```
 order 5: slope 5.229   order 6: slope 5.983
 ```
+
+## Additive test/evidence + opt-in damped Newton (T41–T45) — anchors unchanged
+
+The test-coverage and evidence effort (T41–T45: unit/component/system tiers, the CWI stiff-chemistry benchmarks
+POLLU/BEAM/EMEP/MEDAKZO, the telemetry harness, the EMEP robustness investigation, and the damped-Newton feature) is
+**behaviour-preserving for the defaults**.  It added `tests/`, `benchmarks/`, and CI wiring, plus one opt-in feature:
+a damped Newton (backtracking line search) behind `setNewtonLineSearch(bool)` — a new config flag that is **off by
+default** and gated to the plain, non-taped state solve, so the historical full-step behaviour is reproduced
+bit-for-bit when it is not enabled.  Consequently every anchor above remains **byte-identical**, including `yabi_basic`
+error `6.53219478508049e-10`.  The EMEP benchmark requires a conservative *configuration* (`setFixedOrder(4)` +
+fresh Jacobian per iteration + `setNewtonLineSearch(true)`) — see README "Extreme-stiffness behaviour (EMEP)" — which
+is opt-in, not a default change, so it also leaves the anchors untouched.
+

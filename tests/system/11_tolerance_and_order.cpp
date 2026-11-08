@@ -18,7 +18,7 @@
  *
  * NOT asserted: "observed order == MAXORDER" for orders 2-6.  The controller's
  * order depends on the step/tolerance history and is not exposed by the API.
- * See tests/system/README.md and TODO/reports/T03-*.md.
+ * See tests/system/README.md.
  */
 
 #include <yabi/bdf_integrator.hpp>

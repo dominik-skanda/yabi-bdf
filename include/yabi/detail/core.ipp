@@ -1002,6 +1002,15 @@ bool BDFIntegrator<Scalar>::setNewtonSettings(Scalar NEWTON_SAFETY_, Scalar NEWT
 }
 
 template <typename Scalar>
+bool BDFIntegrator<Scalar>::setNewtonLineSearch(bool enable, unsigned int max_backtracks) {
+    if (max_backtracks == 0)
+        return false;
+    config.NEWTON_LINE_SEARCH = enable;
+    config.NEWTON_LINE_SEARCH_MAX = max_backtracks;
+    return true;
+}
+
+template <typename Scalar>
 bool BDFIntegrator<Scalar>::setAlgorithmSettings(unsigned int MAXORDER_, Scalar MACHINEPRECISION_,
                                                  bool HITSOLUTION_,
                                                  unsigned int ERROR_WEIGHTS_INDEX_) {

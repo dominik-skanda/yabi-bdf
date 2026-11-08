@@ -585,6 +585,46 @@ template <typename Scalar> class NewtonSolver {
             for (j = 0; j < numOfSpecies; j++)
                 temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
 
+            // Damped Newton (backtracking line search), opt-in (T45).  On an
+            // ill-conditioned Newton system the full step can overshoot, so when
+            // it would increase the BDF residual, backtrack (halve the correction)
+            // until the residual decreases (Nocedal & Wright §11).  Gated to the
+            // plain, non-taped state solve: the sensitivity directions are linear
+            // (exact in one solve) and the tape replay reconstructs the full-step
+            // sequence, so both are left on the historical path.  Off by default
+            // → bit-identical to before.
+            if (config.NEWTON_LINE_SEARCH && numOfDerivatives == 0 && !taping) {
+                const Scalar residual_before = newtonResidual;
+                Scalar lambda = (Scalar)1.0;
+                std::vector<Scalar> f_trial(numOfSpecies);
+                std::vector<Scalar> b_trial(numOfSpecies);
+                std::vector<Scalar> root_trial(numOfSpecies);
+                for (unsigned int bt = 0; bt < config.NEWTON_LINE_SEARCH_MAX; ++bt) {
+                    for (j = 0; j < numOfSpecies; j++)
+                        root_trial[j] = root[j] + lambda * temp[j];
+                    for (j = 0; j < numOfSpecies; j++)
+                        cppAD_argument[j] = root_trial[j];
+                    if (RHS_type >= 1)
+                        cppAD_argument[numOfSpecies] = nordsieck.t_i[0];
+                    f_trial = RHS->Forward(0, cppAD_argument);
+
+                    for (j = 0; j < numOfSpecies; j++)
+                        b_trial[j] = nordsieck.z_predictor[numOfSpecies + j];
+                    linalg::SCAL(numOfSpecies, blasTEMP1, b_trial.data(), 1);
+                    linalg::AXPY(numOfSpecies, blasTEMP2, f_trial.data(), 1, b_trial.data(), 1);
+                    linalg::AXPY(numOfSpecies, blasScalarONE, root_trial.data(), 1, b_trial.data(), 1);
+                    linalg::AXPY(numOfSpecies, blasScalarMinusONE, nordsieck.z_predictor.data(), 1,
+                                 b_trial.data(), 1);
+                    const Scalar residual_trial =
+                        linalg::NRM2(numOfSpecies, b_trial.data(), 1) / (Scalar)numOfSpecies;
+                    if (residual_trial <= residual_before)
+                        break;
+                    lambda *= (Scalar)0.5;
+                }
+                if (lambda < (Scalar)1.0)
+                    linalg::SCAL(numOfSpecies, lambda, temp.data(), 1);
+            }
+
             linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, root.data(), 1);
             linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, nordsieck.corrector.data(), 1);
 
@@ -1205,7 +1245,7 @@ template <typename Scalar> class NewtonSolver {
     }
 
     // Local-error acceptance, step/order bookkeeping on success, and the
-    // DASSL/LSODE-style order reduction on rejection.  Returns
+    // order reduction on rejection.  Returns
     // 0 repeat step, 1 next step, 2 output, 3/4 fatal.
     unsigned int acceptCorrectorVector() {
         Scalar blasScalarONE = (Scalar)1.0;
@@ -1465,12 +1505,11 @@ template <typename Scalar> class NewtonSolver {
 
             stepFAIL += 1;
 
-            // DASSL/LSODE-style order reduction (Gear 1971; Byrne & Hindmarsh 1975; Petzold 1982;
-            // Hindmarsh/LSODE): on a rejected step, estimate the local truncation error at order-1
-            // from the highest Nordsieck term and, if dropping the order gives a smaller (or
-            // already acceptable) error, reduce the order instead of only shrinking the step. The
-            // reduction is recorded in the tape (orderDOWN marker below) so the sensitivity replay
-            // reconstructs it.
+            // Order reduction on rejection (Gear 1971; Byrne & Hindmarsh 1975): on a rejected
+            // step, estimate the local truncation error at order-1 from the highest Nordsieck term
+            // and, if dropping the order gives a smaller (or already acceptable) error, reduce the
+            // order instead of only shrinking the step. The reduction is recorded in the tape
+            // (orderDOWN marker below) so the sensitivity replay reconstructs it.
             if (nordsieck.order_corrector > config.MINORDER) {
                 Scalar c_down = -1.0;
                 for (i = 0; i < nordsieck.order_corrector - 1; i++)

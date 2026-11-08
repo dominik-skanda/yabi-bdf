@@ -39,5 +39,4 @@ Includes canonical tests (Brusselator, Robertson, HIRES, Van der Pol, Oregonator
 ## Literature references
 - Hairer E., Wanner G. (1996), Solving Ordinary Differential Equations II, Springer. (Brusselator, Robertson, HIRES, Van der Pol, Oregonator, E5, Prothero–Robinson, etc.)
 - Enright W.H., Hull T.E. (1976), Comparing numerical methods for the solutions of systems of ODEs. BIT 15, 10–48.
-- SUNDIALS/CVODE test suite (Roberson, Van der Pol, etc.)
 - Shampine L.F., Reichelt M.W. (1997), The MATLAB ODE suite.
