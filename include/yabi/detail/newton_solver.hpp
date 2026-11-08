@@ -1249,8 +1249,14 @@ template <typename Scalar> class NewtonSolver {
     // 0 repeat step, 1 next step, 2 output, 3/4 fatal.
     unsigned int acceptCorrectorVector() {
         Scalar blasScalarONE = (Scalar)1.0;
+        // Minimal step-size floor hmin = 4*eps*|t| (LSODE's hmin; see the
+        // "relaxing step size!" clamps below).  The clamps set h to *exactly*
+        // hmin, so the acceptance branches must test h <= hmin (and the
+        // still-reducible branch h > hmin): a strict h < hmin never matches the
+        // floored value and the step is rejected forever ("too much steps
+        // rejected").
         if (convergenceIndicator < 0 &&
-            !(nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1])) {
+            nordsieck.step_size_h > 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
             nordsieck.num_of_steps_per_order = 0;
 
             if (newtonFAIL > config.allowedNEWTON)
@@ -1269,8 +1275,8 @@ template <typename Scalar> class NewtonSolver {
             return 0; // repeat step
         }
         if (convergenceIndicator < 0 &&
-            (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1])) {
-            YABI_LOG_ERROR("WARNING: accept newton iteration due to minimal step size");
+            nordsieck.step_size_h <= 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
+            YABI_LOG_WARN("accept newton iteration due to minimal step size");
         }
         unsigned int i, z;
         bool pass = true;
@@ -1345,10 +1351,12 @@ template <typename Scalar> class NewtonSolver {
                     pass = false;
             }
         }
-        if (nordsieck.step_size_h < 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
+        // At hmin the local-error estimate can no longer shrink (the step is
+        // floored), so accept the step rather than rejecting it forever.
+        if (nordsieck.step_size_h <= 4.0 * config.MACHINEPRECISION * nordsieck.t_i[1]) {
             pass = true;
 
-            std::cout << "WARNING: accept step due to limiting minimal step size";
+            YABI_LOG_WARN("accept step due to limiting minimal step size");
         }
         if (pass) {
             stats.acceptedSteps++;

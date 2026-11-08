@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -504,21 +505,12 @@ int main() {
     std::vector<double> atol(66, 1.0e-6);
 
     // EMEP is extremely stiff: the species span ~1e-38..1e14 (a stiffness ratio
-    // of ~1e14).  Instrumentation (T45) showed two interacting difficulties:
-    //   1. the Newton matrix P = I - (h/l)J is ill-conditioned at the dawn/dusk
-    //      transient, so the Newton iteration converges only *linearly* (residual
-    //      ~0.85x per iteration) — and the conditioning worsens with BDF order;
-    //   2. at the higher orders the order-reduction heuristic (drop order when
-    //      the order-1 error estimate is better) misfires, because its order-1
-    //      estimate is unreliable at this stiffness, and the controller oscillates
-    //      order and stalls.
-    // Both are resolved by capping the order at 4 (setFixedOrder): order 4 is
-    // A(alpha)-stable with alpha ~73 deg (order 5 ~52 deg, order 6 ~18 deg) and
-    // its Newton matrix is better conditioned.  This is the standard stiff-ODE
-    // remedy (Hairer & Wanner §V).
-    it.setNewtonSettings(-1.0, 0.01, 0.30, 25, 25, true); // fresh J each iteration
-    it.setNewtonLineSearch(true, 6); // damped Newton: backtrack on residual overshoot
-    it.setFixedOrder(4);
+    // of ~1e14), and the dawn/dusk photolysis switches drive fast transients in
+    // the quasi-steady trace species.  The integrator handles it with default
+    // Newton settings (no line search, no fixed order); the only non-default is
+    // a max order of 5, the standard stiff-BDF cap (BDF6 is not A(alpha)-stable)
+    // and the order of the CWI reference (RADAU5).
+    it.setAlgorithmSettings(5, std::numeric_limits<double>::epsilon(), true, 1);
 
     // The photolysis switches (dawn 04:00 / dusk 20:00 local) are discontinuities
     // in the RHS; the CWI test set marks them as NDISC=8 breakpoints.  Integrate
@@ -532,7 +524,6 @@ int main() {
     for (int seg = 0; seg < 9; ++seg) {
         if (!it.resetIntegration(y.data(), t_cur, 600.0, 1e-8, atol.data(), false, false, NULL,
                                  NULL, NULL, NULL, 0) ||
-            !it.setAlgorithmSettings(4, 1e-16, true, 1) ||
             !it.performIntegration(tend[seg], 10000000)) {
             std::cerr << "FAIL: EMEP integration did not converge (segment " << seg << ")\n";
             return 1;
@@ -549,8 +540,8 @@ int main() {
         max_rel = std::max(max_rel, std::fabs(y[i] - ref[i]) / (1.0 + std::fabs(ref[i])));
     std::cout << "EMEP max relative error vs CWI reference = " << max_rel << "\n";
 
-    // With the fixed order-4 config the max relative error is ~4e-6 (dominated by
-    // the quasi-steady trace species H2); a 1e-4 gate is a comfortable agreement.
+    // The error is dominated by the quasi-steady trace species; a 1e-4 gate is a
+    // comfortable agreement with the RADAU5 reference.
     if (max_rel < 1e-4) {
         std::cout << "PASS: EMEP matches the CWI reference solution\n";
         return 0;

@@ -112,7 +112,10 @@ POLLU/BEAM/EMEP/MEDAKZO, the telemetry harness, the EMEP robustness investigatio
 a damped Newton (backtracking line search) behind `setNewtonLineSearch(bool)` — a new config flag that is **off by
 default** and gated to the plain, non-taped state solve, so the historical full-step behaviour is reproduced
 bit-for-bit when it is not enabled.  Consequently every anchor above remains **byte-identical**, including `yabi_basic`
-error `6.53219478508049e-10`.  The EMEP benchmark requires a conservative *configuration* (`setFixedOrder(4)` +
-fresh Jacobian per iteration + `setNewtonLineSearch(true)`) — see README "Extreme-stiffness behaviour (EMEP)" — which
-is opt-in, not a default change, so it also leaves the anchors untouched.
+error `6.53219478508049e-10`.  The EMEP benchmark (stiffness ratio ~1e14) originally needed a conservative
+*configuration* (`setFixedOrder(4)` + fresh Jacobian per iteration + `setNewtonLineSearch(true)`); that was a
+work-around for a one-character boundary bug in the minimal-step acceptance (`h < 4·eps·|t|` vs the floor's exact
+`h = 4·eps·|t|`).  Fixing the test to `h <= 4·eps·|t|` lets EMEP match its reference with defaults (max order 5, no
+line search, no fixed order) — see README "Extreme-stiffness behaviour (EMEP)" — and is likewise a no-op on
+well-behaved problems, so it leaves every anchor above untouched.
 
