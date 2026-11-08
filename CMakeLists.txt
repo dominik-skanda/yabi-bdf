@@ -197,6 +197,38 @@ target_link_libraries(yabi_pure
 )
 set_target_properties(yabi_pure PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ---------------------------------------------------------------------------
+# Python bindings (T37) — pybind11 `yabi` module on the analytic (pure) path.
+# OFF by default so the default build stays Python-free.  Requires pybind11
+# (>= 3.0 for Python 3.14): `pip install pybind11` and re-configure.
+# ---------------------------------------------------------------------------
+option(YABI_BUILD_PYTHON "Build the pybind11 `yabi` Python module (T37)" OFF)
+if(YABI_BUILD_PYTHON)
+    find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+    # Locate a pip-installed pybind11 (>= 3.0) via its Python helper, so the
+    # configure step finds it wherever pip put it (no hand-set pybind11_DIR).
+    execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
+        OUTPUT_VARIABLE pybind11_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE pybind11_HELPER_RC)
+    if(NOT pybind11_HELPER_RC EQUAL 0)
+        message(FATAL_ERROR
+            "pybind11 not found: `pip install pybind11` (>= 3.0) and re-configure.")
+    endif()
+    find_package(pybind11 CONFIG REQUIRED)
+    pybind11_add_module(yabi_python bindings/python/yabi.cpp)
+    # Importable as `import yabi` (target name stays yabi_python to avoid the
+    # C++ `yabi` library target).
+    set_target_properties(yabi_python PROPERTIES OUTPUT_NAME "yabi")
+    target_link_libraries(yabi_python PRIVATE yabi_pure)
+    # CI-verifiable smoke test (only when the module is built).
+    add_test(NAME python_bindings
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_yabi.py)
+    set_tests_properties(python_bindings PROPERTIES
+        ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>"
+        LABELS "python")
+endif()
+
 # T44 — telemetry harness: emits the machine-readable evidence table consumed by
 # benchmarks/report.py, and self-checks tolerance adherence (error decreases as
 # rtol is tightened; the tightest rtol reaches < 1e-6), so the evidence layer is

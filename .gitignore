@@ -1,5 +1,6 @@
 build/
 build-pure/
+build-py/
 bin/
 build-cmake/
 cmake-build-*/
