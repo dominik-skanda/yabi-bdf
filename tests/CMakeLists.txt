@@ -26,8 +26,8 @@ endfunction()
 # ---------------------------------------------------------------------------
 file(GLOB YABI_UNIT_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_*.cpp")
 if(NOT YABI_USE_CPPAD)
-    # The RHS adapter unit test builds a CppAD tape.
-    list(FILTER YABI_UNIT_SOURCES EXCLUDE REGEX "/test_cppad_rhs_sparsity\\.cpp$")
+    # The CppAD RHS adapter tests build a CppAD tape.
+    list(FILTER YABI_UNIT_SOURCES EXCLUDE REGEX "/test_cppad_.*\\.cpp$")
 endif()
 foreach(source ${YABI_UNIT_SOURCES})
     yabi_register_test("${source}" "unit")
