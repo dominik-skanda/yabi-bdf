@@ -41,6 +41,10 @@ if(YABI_USE_CPPAD)
     yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/native_sparse.cpp" "component;sparse")
     yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/matrix_free_newton.cpp"
         "component;matrixfree")
+    # T42 — the four first-order sensitivity modes agree (forward/reverse/
+    # simultaneous/continuous adjoint).
+    yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/sensitivity_agreement.cpp"
+        "component;sensitivity")
 endif()
 
 # Pure (CppAD-free) path: UserODERHS supplies the analytic sparsity pattern and
