@@ -6,23 +6,29 @@
  *  SPDX-License-Identifier: Apache-2.0
  */
 
-// EXPERIMENTAL (T36) — dense LU solver offloading the Newton linear solve to a
-// GPU via cuSOLVER.  Only `double` is supported (matching the single
+// EXPERIMENTAL (T36/T36b) — dense LU solver offloading the Newton linear solve
+// to a GPU via cuSOLVER.  Only `double` is supported (matching the single
 // BDFIntegrator instantiation).  Requires CUDA (built against 12.6) and an
 // NVIDIA driver; compiled with the regular host compiler (no nvcc needed — the
 // cuSOLVER host API is plain C), linked against `-lcusolver -lcudart`.
 //
+// Each instance owns its own CUDA stream + cuSOLVER handle (cusolverDnSetStream)
+// and its own device + pinned-host buffers, so multiple instances are
+// independent and thread-safe — see T36c (parallel multi-instance).  Copies are
+// stream-ordered (cudaMemcpyAsync) through pinned staging buffers, so transfer
+// can overlap with compute across streams instead of serializing on the legacy
+// default stream.
+//
 // Scope (honest): this offloads the *factorize + solve* of the Newton matrix P.
 // The Jacobian J is still assembled on the host (CppAD / analytic); P is copied
 // to the device, factored with cusolverDnDgetrf, and each solve is
-// cusolverDnDgetrs on the device factors, with the result copied back.  The LU
-// factors and pivots stay resident on the device between factorize() and
-// solve(), matching the integrator's factorize-once / solve-per-iteration
-// pattern.  It is the dense path only (supportsCsc() == false).
+// cusolverDnDgetrs on the device factors.  Dense path only (supportsCsc() ==
+// false); the sparse cuSPARSE path is a separate follow-up (T36b).
 //
 // Portability: the cuBLAS/cuSOLVER C API is stable across CUDA 12.6 -> 13; this
 // solver is source-identical on both.  Only the build (arch flag / driver)
-// changes.
+// changes.  The default build is completely CUDA-free (this header is never
+// included unless the user opts in).
 
 #ifndef YABI_CUDA_LINEAR_SOLVER_HPP
 #define YABI_CUDA_LINEAR_SOLVER_HPP
@@ -31,6 +37,7 @@
 #include <cusolverDn.h>
 
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 #include <yabi/linear_solver.hpp>
@@ -42,12 +49,18 @@ template <typename Scalar> class CudaLinearSolver : public LinearSolver<Scalar> 
                   "CudaLinearSolver supports double only (single library instantiation)");
 
   public:
-    CudaLinearSolver() { cusolverDnCreate(&handle_); }
+    CudaLinearSolver() {
+        cudaStreamCreate(&stream_);
+        cusolverDnCreate(&handle_);
+        cusolverDnSetStream(handle_, stream_);
+    }
 
     ~CudaLinearSolver() override {
         release();
         if (handle_)
             cusolverDnDestroy(handle_);
+        if (stream_)
+            cudaStreamDestroy(stream_);
     }
 
     bool initialize(unsigned int n) override {
@@ -57,20 +70,22 @@ template <typename Scalar> class CudaLinearSolver : public LinearSolver<Scalar> 
             return true;
         release();
         n_ = n;
-        if (cudaMalloc(&d_P_, (std::size_t)n * n * sizeof(double)) != cudaSuccess ||
+        const std::size_t nn = (std::size_t)n * n;
+        if (cudaMalloc(&d_P_, nn * sizeof(double)) != cudaSuccess ||
             cudaMalloc(&d_ipiv_, n * sizeof(int)) != cudaSuccess ||
             cudaMalloc(&d_info_, sizeof(int)) != cudaSuccess ||
-            cudaMalloc(&d_b_, n * sizeof(double)) != cudaSuccess)
+            cudaMalloc(&d_b_, n * sizeof(double)) != cudaSuccess ||
+            cudaMallocHost(&h_P_, nn * sizeof(double)) != cudaSuccess ||
+            cudaMallocHost(&h_b_, n * sizeof(double)) != cudaSuccess ||
+            cudaMallocHost(&h_x_, n * sizeof(double)) != cudaSuccess)
             return false;
         return true;
     }
 
-    // Factor P = L U in place on the device; pivots stay resident.  The host P
-    // is left unmodified (unlike the dense LAPACK path, which factorizes in
-    // place); solve() uses the device factors.
+    // Factor P = L U on the device (stream-ordered).  The host P is left
+    // unmodified; solve() uses the resident device factors + pivots.
     bool factorize(Scalar *P, int *ipiv, long * /*scalingD1*/, long * /*scalingD2*/,
                    unsigned int n) override {
-        (void)P; // copied below
         if (!handle_ || n != n_)
             return false;
         if (lwork_ == 0) {
@@ -78,11 +93,12 @@ template <typename Scalar> class CudaLinearSolver : public LinearSolver<Scalar> 
             if (cudaMalloc(&d_W_, (std::size_t)lwork_ * sizeof(double)) != cudaSuccess)
                 return false;
         }
-        if (cudaMemcpy(d_P_, P, (std::size_t)n * n * sizeof(double), cudaMemcpyHostToDevice) !=
-            cudaSuccess)
-            return false;
+        std::memcpy(h_P_, P, (std::size_t)n * n * sizeof(double)); // pageable -> pinned
+        cudaMemcpyAsync(d_P_, h_P_, (std::size_t)n * n * sizeof(double), cudaMemcpyHostToDevice,
+                        stream_);
         cusolverDnDgetrf(handle_, (int)n, (int)n, d_P_, (int)n, d_W_, d_ipiv_, d_info_);
-        cudaMemcpy(ipiv, d_ipiv_, n * sizeof(int), cudaMemcpyDeviceToHost); // interface contract
+        cudaMemcpyAsync(ipiv, d_ipiv_, n * sizeof(int), cudaMemcpyDeviceToHost, stream_);
+        cudaStreamSynchronize(stream_);
         int info = 0;
         cudaMemcpy(&info, d_info_, sizeof(int), cudaMemcpyDeviceToHost);
         return info == 0;
@@ -96,19 +112,20 @@ template <typename Scalar> class CudaLinearSolver : public LinearSolver<Scalar> 
         if (!handle_ || n != n_)
             return -1;
         for (unsigned int c = 0; c < nrhs; ++c) {
-            if (cudaMemcpy(d_b_, b + (std::size_t)c * n, n * sizeof(double),
-                           cudaMemcpyHostToDevice) != cudaSuccess)
-                return -1;
+            std::memcpy(h_b_, b + (std::size_t)c * n, n * sizeof(double)); // pageable -> pinned
+            cudaMemcpyAsync(d_b_, h_b_, n * sizeof(double), cudaMemcpyHostToDevice, stream_);
             cusolverDnDgetrs(handle_, CUBLAS_OP_N, (int)n, 1, d_P_, (int)n, d_ipiv_, d_b_, (int)n,
                              d_info_);
-            cudaMemcpy(b + (std::size_t)c * n, d_b_, n * sizeof(double), cudaMemcpyDeviceToHost);
+            cudaMemcpyAsync(h_x_, d_b_, n * sizeof(double), cudaMemcpyDeviceToHost, stream_);
+            cudaStreamSynchronize(stream_);
+            std::memcpy(b + (std::size_t)c * n, h_x_, n * sizeof(double)); // pinned -> pageable
         }
         int info = 0;
         cudaMemcpy(&info, d_info_, sizeof(int), cudaMemcpyDeviceToHost);
         return info;
     }
 
-    // Dense path only for the experimental pass.
+    // Dense path only for this pass (sparse cuSPARSE is a follow-up).
     bool supportsCsc() const override { return false; }
 
   private:
@@ -123,20 +140,33 @@ template <typename Scalar> class CudaLinearSolver : public LinearSolver<Scalar> 
             cudaFree(d_info_);
         if (d_b_)
             cudaFree(d_b_);
+        if (h_P_)
+            cudaFreeHost(h_P_);
+        if (h_b_)
+            cudaFreeHost(h_b_);
+        if (h_x_)
+            cudaFreeHost(h_x_);
         d_P_ = nullptr;
         d_ipiv_ = nullptr;
         d_W_ = nullptr;
         d_info_ = nullptr;
         d_b_ = nullptr;
+        h_P_ = nullptr;
+        h_b_ = nullptr;
+        h_x_ = nullptr;
         lwork_ = 0;
     }
 
+    cudaStream_t stream_ = nullptr;
     cusolverDnHandle_t handle_ = nullptr;
-    double *d_P_ = nullptr; // LU factors
-    int *d_ipiv_ = nullptr; // pivots
-    double *d_W_ = nullptr; // workspace
-    int *d_info_ = nullptr; // cuSOLVER status
-    double *d_b_ = nullptr; // RHS scratch
+    double *d_P_ = nullptr; // LU factors (device)
+    int *d_ipiv_ = nullptr; // pivots (device)
+    double *d_W_ = nullptr; // workspace (device)
+    int *d_info_ = nullptr; // cuSOLVER status (device)
+    double *d_b_ = nullptr; // RHS scratch (device)
+    double *h_P_ = nullptr; // pinned staging for P
+    double *h_b_ = nullptr; // pinned staging for b
+    double *h_x_ = nullptr; // pinned staging for the result
     unsigned int n_ = 0;
     int lwork_ = 0;
 };

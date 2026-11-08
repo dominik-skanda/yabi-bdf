@@ -73,6 +73,14 @@ if(YABI_USE_CUDA)
     target_link_libraries(yabi_test_cuda_solver PRIVATE yabi ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
     add_test(NAME cuda_solver COMMAND yabi_test_cuda_solver)
     set_tests_properties(cuda_solver PROPERTIES LABELS "component;cuda")
+
+    # T36c — parallel multi-instance GPU solves (thread-safe per-instance streams).
+    add_executable(yabi_test_cuda_parallel
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/cuda_parallel.cpp")
+    target_include_directories(yabi_test_cuda_parallel PRIVATE ${CUDA_INCLUDE_DIR})
+    target_link_libraries(yabi_test_cuda_parallel PRIVATE yabi ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+    add_test(NAME cuda_parallel COMMAND yabi_test_cuda_parallel)
+    set_tests_properties(cuda_parallel PROPERTIES LABELS "component;cuda")
 endif()
 
 # ---------------------------------------------------------------------------
