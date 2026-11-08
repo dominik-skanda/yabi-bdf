@@ -82,10 +82,40 @@ void testCscReferencePath() {
     yabi_test::check(bd[0] == b[0] && bd[1] == b[1], "CSC reference path is bit-identical");
 }
 
+// The LinearSolver interface defaults: a solver that does not opt into CSC /
+// matrix-free / forcing must report the documented defaults, and the optional
+// setter no-ops must be harmless.
+class MinimalSolver : public yabi::LinearSolver<double> {
+  public:
+    bool initialize(unsigned int) override { return true; }
+    bool factorize(double *, int *, long *, long *, unsigned int) override { return false; }
+    int solve(double *, int *, long *, long *, double *, unsigned int, unsigned int) override {
+        return -1;
+    }
+};
+
+void testInterfaceDefaults() {
+    MinimalSolver s;
+    yabi_test::check(!s.supportsCsc(), "default supportsCsc is false");
+    yabi_test::check(!s.prefersSparseFactorization(), "default prefersSparseFactorization is false");
+    yabi_test::check(!s.supportsMatrixFree(), "default supportsMatrixFree is false");
+    yabi_test::check(s.requiresAssembledMatrix(), "default requiresAssembledMatrix is true");
+    yabi_test::check(!s.hasForcingTerm(), "default hasForcingTerm is false");
+    // The optional setter no-ops must not crash and must not change the flags.
+    s.setMatrixFreeOperator(nullptr);
+    s.setUserPreconditioner(nullptr);
+    s.setForcingTerm(yabi::ForcingTerm<double>{});
+    s.setNewtonLinearizationContext(yabi::NewtonLinearizationContext<double>{});
+    s.setJacobianPattern(nullptr);
+    s.setUserData(nullptr);
+    yabi_test::check(!s.hasForcingTerm(), "no forcing after a null setForcingTerm");
+}
+
 } // namespace
 
 int main() {
     testDensePath();
     testCscReferencePath();
+    testInterfaceDefaults();
     return yabi_test::finish("dense/CSC linear solver unit tests");
 }
