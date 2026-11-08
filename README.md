@@ -553,6 +553,27 @@ integrator.setLinearSolver(new yabi::UmfpackLinearSolver<double>()); // takes ow
 ```
 Defaults to dense LAPACK. Supports UMFPACK/KLU via SuiteSparse. See `examples/heat1d_umfpack_literature.cpp`.
 
+### GPU linear solver (experimental, T36)
+An opt-in cuSOLVER dense-LU solver offloads the Newton `factorize`/`solve` to a
+GPU through the same `setLinearSolver` seam:
+
+```cpp
+#include <yabi/bdf_integrator.hpp>
+#include <yabi/cuda_linear_solver.hpp>
+
+integrator.setLinearSolver(new yabi::CudaLinearSolver<double>());
+```
+
+Build it with `-DYABI_USE_CUDA=ON` (default OFF — the regular build stays
+CUDA-free). It uses only the host-side cuBLAS/cuSOLVER C API (no `nvcc`), and
+`tests/component/cuda_solver.cpp` (registered when CUDA is on) cross-checks the
+GPU state solve against the dense LAPACK path on HIRES to ~3e-16. **Scope
+(honest):** this offloads the linear solve only — the Jacobian `J` is still
+assembled on the host and copied over as `P`; the Jacobian-on-GPU and sparse
+(cuSPARSE) paths are future extensions. The cuBLAS/cuSOLVER API is stable across
+CUDA 12.6 → 13, so the solver is source-identical on both (only `-arch`/driver
+change). Requires CUDA (built against 12.6) + an NVIDIA driver.
+
 ### Matrix-free Newton–Krylov (state solve)
 ```cpp
 #include <yabi/bdf_integrator.hpp>

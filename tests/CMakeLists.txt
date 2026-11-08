@@ -64,6 +64,17 @@ if(YABI_USE_CPPAD AND UMFPACK_INCLUDE_DIR AND UMFPACK_LIBRARY AND KLU_INCLUDE_DI
     set_tests_properties(suitesparse_sparse PROPERTIES LABELS "component;sparse;suitesparse")
 endif()
 
+# Experimental CUDA (cuSOLVER) solver test (T36): registered only when
+# YABI_USE_CUDA=ON, so the default build stays CUDA-free.
+if(YABI_USE_CUDA)
+    add_executable(yabi_test_cuda_solver
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/cuda_solver.cpp")
+    target_include_directories(yabi_test_cuda_solver PRIVATE ${CUDA_INCLUDE_DIR})
+    target_link_libraries(yabi_test_cuda_solver PRIVATE yabi ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+    add_test(NAME cuda_solver COMMAND yabi_test_cuda_solver)
+    set_tests_properties(cuda_solver PROPERTIES LABELS "component;cuda")
+endif()
+
 # ---------------------------------------------------------------------------
 # System tier — the mathematical testbench.
 # ---------------------------------------------------------------------------

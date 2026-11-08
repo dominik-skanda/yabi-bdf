@@ -70,6 +70,30 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# Experimental CUDA (cuSOLVER) linear solver (T36).  OFF by default; the default
+# build stays CUDA-free.  Only the host-side cuSOLVER/cuBLAS C API is used (no
+# nvcc, no CUDA language), so we just need the headers + libcusolver + libcudart.
+# ---------------------------------------------------------------------------
+option(YABI_USE_CUDA "Build the experimental cuSOLVER linear solver + GPU test (T36)" OFF)
+if(YABI_USE_CUDA)
+    find_path(CUDA_INCLUDE_DIR cusolverDn.h
+        PATHS /usr/local/cuda-12.6/include /usr/local/cuda/include $ENV{CUDA_HOME}
+        PATH_SUFFIXES include)
+    find_library(CUSOLVER_LIBRARY cusolver
+        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
+        PATH_SUFFIXES lib64 lib)
+    find_library(CUDART_LIBRARY cudart
+        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
+        PATH_SUFFIXES lib64 lib)
+    if(CUDA_INCLUDE_DIR AND CUSOLVER_LIBRARY AND CUDART_LIBRARY)
+        message(STATUS "CUDA (cuSOLVER) found: ${CUDA_INCLUDE_DIR}")
+    else()
+        message(FATAL_ERROR
+            "YABI_USE_CUDA=ON but CUDA (cusolverDn.h, libcusolver, libcudart) was not found.")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Library
 # ---------------------------------------------------------------------------
 add_library(yabi src/bdf_integrator.cpp)
