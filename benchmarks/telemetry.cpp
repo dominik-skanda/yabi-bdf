@@ -142,12 +142,51 @@ template <typename B> Run runAt(const std::string &name, double rtol) {
 int main() {
     const double rtols[] = {1e-4, 1e-6, 1e-8, 1e-10};
     std::printf("benchmark,rtol,error,runtime_ms,jacobian_evals,factorizations,steps,order\n");
+    std::vector<Run> runs;
     for (double rtol : rtols) {
         for (const Run &r : {runAt<Robertson>("robertson", rtol), runAt<Brusselator>("brusselator", rtol)}) {
+            runs.push_back(r);
             std::printf("%s,%.1e,%.6e,%.3f,%u,%u,%u,%u\n", r.name.c_str(), r.rtol, r.error,
                         r.runtime_ms, r.jacobian_evals, r.factorizations, r.accepted_steps,
                         r.final_order);
         }
+    }
+
+    // Self-check: tolerance adherence.  The global error vs the independent
+    // reference must decrease as rtol is tightened, and the tightest rtol must
+    // reach a small error.  This makes the harness a ctest (not just a table
+    // emitter) so the evidence layer is CI-verified.
+    int failures = 0;
+    const char *names[2] = {"robertson", "brusselator"};
+    for (const char *nm : names) {
+        const Run *lo = nullptr, *hi = nullptr;
+        for (const Run &r : runs) {
+            if (r.name != nm)
+                continue;
+            if (r.rtol == rtols[0])
+                hi = &r;
+            if (r.rtol == rtols[sizeof(rtols) / sizeof(rtols[0]) - 1])
+                lo = &r;
+        }
+        if (!lo || !hi || !std::isfinite(lo->error) || !std::isfinite(hi->error)) {
+            std::fprintf(stderr, "telemetry self-check: %s missing/failed runs\n", nm);
+            ++failures;
+            continue;
+        }
+        if (!(lo->error < hi->error)) {
+            std::fprintf(stderr, "telemetry self-check: %s error not decreasing (%.3e vs %.3e)\n",
+                         nm, lo->error, hi->error);
+            ++failures;
+        }
+        if (!(lo->error < 1e-6)) {
+            std::fprintf(stderr, "telemetry self-check: %s final error %.3e >= 1e-6\n", nm,
+                         lo->error);
+            ++failures;
+        }
+    }
+    if (failures) {
+        std::fprintf(stderr, "telemetry self-check: %d failure(s)\n", failures);
+        return 1;
     }
     return 0;
 }

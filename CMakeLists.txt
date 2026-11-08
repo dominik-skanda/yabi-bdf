@@ -197,11 +197,15 @@ target_link_libraries(yabi_pure
 )
 set_target_properties(yabi_pure PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# T44 — telemetry harness (not a ctest; emits the machine-readable evidence table
-# consumed by benchmarks/report.py).
+# T44 — telemetry harness: emits the machine-readable evidence table consumed by
+# benchmarks/report.py, and self-checks tolerance adherence (error decreases as
+# rtol is tightened; the tightest rtol reaches < 1e-6), so the evidence layer is
+# CI-verified as a ctest under the "benchmark" label.
 if(YABI_USE_CPPAD)
     add_executable(yabi_telemetry benchmarks/telemetry.cpp)
     target_link_libraries(yabi_telemetry PRIVATE yabi)
+    add_test(NAME telemetry COMMAND yabi_telemetry)
+    set_tests_properties(telemetry PROPERTIES LABELS "benchmark")
 endif()
 
 # ---------------------------------------------------------------------------

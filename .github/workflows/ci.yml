@@ -38,11 +38,16 @@ jobs:
         run: ctest --test-dir build -L unit --output-on-failure --no-tests=error
 
       - name: Test component tier
-        if: matrix.cppad == 'ON'
+        # The component tier also runs in the pure build: matrix_free_pure /
+        # matrix_free_jfree exercise the CppAD-free matrix-free Newton path.
         run: ctest --test-dir build -L component --output-on-failure --no-tests=error
 
       - name: Test system tier
         run: ctest --test-dir build -L system --output-on-failure --no-tests=error
+
+      - name: Test benchmark (evidence) tier
+        if: matrix.cppad == 'ON'
+        run: ctest --test-dir build -L benchmark --output-on-failure --no-tests=error
 
       - name: Test examples
         run: ctest --test-dir build -L example --output-on-failure --no-tests=error
