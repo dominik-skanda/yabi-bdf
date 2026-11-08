@@ -45,6 +45,44 @@ if(YABI_USE_CPPAD)
     # simultaneous/continuous adjoint).
     yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/sensitivity_agreement.cpp"
         "component;sensitivity")
+    # T42 — CppAD (AD) and UserODERHS (analytic) backends agree.
+    yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/rhs_backend_agreement.cpp"
+        "component;backend")
+endif()
+
+# T42 — solver agreement matrix: one loop test over every available solver.
+# The external solvers are compiled in only when their flag is on (YABI_HAVE_*).
+if(YABI_USE_CPPAD)
+    add_executable(yabi_test_solver_matrix
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/solver_matrix.cpp")
+    target_link_libraries(yabi_test_solver_matrix PRIVATE yabi)
+    if(YABI_USE_CUDA)
+        target_compile_definitions(yabi_test_solver_matrix PRIVATE YABI_HAVE_CUDA)
+        target_include_directories(yabi_test_solver_matrix PRIVATE ${CUDA_INCLUDE_DIR})
+        target_link_libraries(yabi_test_solver_matrix PRIVATE ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+    endif()
+    if(YABI_USE_AMGCL)
+        target_compile_definitions(yabi_test_solver_matrix PRIVATE YABI_HAVE_AMGCL)
+        target_include_directories(yabi_test_solver_matrix PRIVATE ${AMGCL_INCLUDE_DIR} ${BOOST_INCLUDE_DIR})
+        if(OpenMP_CXX_FOUND)
+            target_link_libraries(yabi_test_solver_matrix PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+    endif()
+    if(YABI_USE_GINKGO)
+        target_compile_definitions(yabi_test_solver_matrix PRIVATE YABI_HAVE_GINKGO)
+        target_include_directories(yabi_test_solver_matrix PRIVATE ${GINKGO_INCLUDE_DIR})
+        target_link_libraries(yabi_test_solver_matrix PRIVATE
+            ${GINKGO_LIBRARY} ${GINKGO_DEVICE_LIBRARY} ${GINKGO_OMP_LIBRARY} OpenMP::OpenMP_CXX)
+        target_link_options(yabi_test_solver_matrix PRIVATE "-Wl,-rpath,${GINKGO_LIBRARY_DIR}")
+    endif()
+    if(YABI_USE_CUDSS)
+        target_compile_definitions(yabi_test_solver_matrix PRIVATE YABI_HAVE_CUDSS)
+        target_include_directories(yabi_test_solver_matrix PRIVATE ${CUDSS_INCLUDE_DIR} ${CUDA_INCLUDE_DIR})
+        target_link_libraries(yabi_test_solver_matrix PRIVATE ${CUDSS_LIBRARY} ${CUDART_LIBRARY})
+        target_link_options(yabi_test_solver_matrix PRIVATE "-Wl,-rpath,${CUDSS_LIBRARY_DIR}")
+    endif()
+    add_test(NAME solver_matrix COMMAND yabi_test_solver_matrix)
+    set_tests_properties(solver_matrix PROPERTIES LABELS "component;solvers")
 endif()
 
 # Pure (CppAD-free) path: UserODERHS supplies the analytic sparsity pattern and
