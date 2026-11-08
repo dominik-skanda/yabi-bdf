@@ -97,6 +97,19 @@ if(YABI_USE_AMGCL)
     set_tests_properties(amgcl_solver PROPERTIES LABELS "component;amgcl")
 endif()
 
+# T36d — external Ginkgo sparse-solver adapter, registered only when
+# YABI_USE_GINKGO=ON, so the default build stays dependency-free.
+if(YABI_USE_GINKGO)
+    add_executable(yabi_test_ginkgo_solver
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/ginkgo_solver.cpp")
+    target_include_directories(yabi_test_ginkgo_solver PRIVATE ${GINKGO_INCLUDE_DIR})
+    target_link_libraries(yabi_test_ginkgo_solver PRIVATE yabi
+        ${GINKGO_LIBRARY} ${GINKGO_DEVICE_LIBRARY} ${GINKGO_OMP_LIBRARY} OpenMP::OpenMP_CXX)
+    target_link_options(yabi_test_ginkgo_solver PRIVATE "-Wl,-rpath,${GINKGO_LIBRARY_DIR}")
+    add_test(NAME ginkgo_solver COMMAND yabi_test_ginkgo_solver)
+    set_tests_properties(ginkgo_solver PROPERTIES LABELS "component;ginkgo")
+endif()
+
 # ---------------------------------------------------------------------------
 # System tier — the mathematical testbench.
 # ---------------------------------------------------------------------------

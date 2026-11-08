@@ -116,6 +116,26 @@ if(YABI_USE_AMGCL)
     endif()
 endif()
 
+option(YABI_USE_GINKGO "Build the external Ginkgo sparse-solver adapter + test (T36d)" OFF)
+if(YABI_USE_GINKGO)
+    find_path(GINKGO_INCLUDE_DIR ginkgo/ginkgo.hpp
+        PATHS $ENV{HOME}/.local/opt/ginkgo /usr/local/include /usr/include
+        PATH_SUFFIXES include)
+    find_library(GINKGO_LIBRARY ginkgo PATHS $ENV{HOME}/.local/opt/ginkgo PATH_SUFFIXES lib)
+    find_library(GINKGO_DEVICE_LIBRARY ginkgo_device
+        PATHS $ENV{HOME}/.local/opt/ginkgo PATH_SUFFIXES lib)
+    find_library(GINKGO_OMP_LIBRARY ginkgo_omp
+        PATHS $ENV{HOME}/.local/opt/ginkgo PATH_SUFFIXES lib)
+    find_package(OpenMP REQUIRED)
+    if(GINKGO_INCLUDE_DIR AND GINKGO_LIBRARY AND GINKGO_OMP_LIBRARY)
+        get_filename_component(GINKGO_LIBRARY_DIR "${GINKGO_LIBRARY}" DIRECTORY)
+        message(STATUS "Ginkgo found: ${GINKGO_INCLUDE_DIR} (lib: ${GINKGO_LIBRARY_DIR})")
+    else()
+        message(FATAL_ERROR
+            "YABI_USE_GINKGO=ON but Ginkgo was not found (see README for provisioning).")
+    endif()
+endif()
+
 # ---------------------------------------------------------------------------
 # Library
 # ---------------------------------------------------------------------------

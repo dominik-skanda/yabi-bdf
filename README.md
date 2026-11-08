@@ -607,8 +607,24 @@ headers once (no sudo): AMGCL → `~/.local/opt/amgcl`, Boost → `~/.local/opt/
 (download the AMGCL tarball and `libboost1.83-dev` via `apt download`, extract).
 `tests/component/amgcl_solver.cpp` cross-checks it vs dense LAPACK on HIRES to
 `4.4e-16`. The BDF Newton matrix is non-symmetric, so the default is
-BiCGStab+ILU; AMG+CG is the SPD-only alternative. Further adapters (Ginkgo,
-cuDSS) reuse the same `ExternalSparseSolver` base.
+BiCGStab+ILU; AMG+CG is the SPD-only alternative.
+
+The second adapter is **Ginkgo** (BSD, many-core OpenMP/CUDA/HIP):
+
+```cpp
+#include <yabi/bdf_integrator.hpp>
+#include <yabi/ginkgo_linear_solver.hpp>
+
+integrator.setLinearSolver(new yabi::GinkgoLinearSolver<double>()); // BiCGStab (OpenMP)
+```
+
+Build with `-DYABI_USE_GINKGO=ON`. Provision Ginkgo from its official source
+(cmake + install to `~/.local/opt/ginkgo`, OpenMP backend). It uses the OpenMP
+(CPU) backend, so it works without a GPU; the CUDA backend is the same adapter
+with a `CudaExecutor` (and a supported GPU arch). `tests/component/ginkgo_solver.cpp`
+cross-checks it to `1.1e-16`. Further adapters (cuDSS, …) reuse the same
+`ExternalSparseSolver` base — the libraries are **never vendored**, only the
+thin adapter + CMake detection live in this repo.
 
 ### Matrix-free Newton–Krylov (state solve)
 ```cpp
