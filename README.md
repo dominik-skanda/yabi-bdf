@@ -74,6 +74,8 @@ pip install matplotlib
 | SuiteSparse (UMFPACK/KLU) | Optional, for sparse linear solvers via the pluggable `LinearSolver` interface. |
 | C++17 compiler | GCC or Clang. |
 | CMake ≥ 3.16 | Build only. |
+| pybind11 ≥ 3.0 | Optional, for the `yabi` Python module (`-DYABI_BUILD_PYTHON=ON`). `pip install pybind11`. |
+| python3-dev | Optional, for the Python module (Python.h headers). |
 | matplotlib | Optional. Only for `reproduce_benchmarks.py`'s work–precision plot (and `pyplot/plot_all.py`). |
 
 CppAD is distributed under EPL-2.0 with a GPL-2.0-or-later secondary license.
@@ -83,6 +85,8 @@ On Debian/Ubuntu:
 
 ```sh
 sudo apt install build-essential liblapack-dev libblas-dev cmake libcppad-dev
+# optional, for the Python bindings (T37):
+sudo apt install python3-dev && pip install pybind11
 ```
 
 ## Layout
@@ -131,6 +135,34 @@ ctest --test-dir build
 When CppAD is installed system-wide, `-DCPPAD_ROOT` / `CPPAD_ROOT` can be
 omitted. CMake first tries `pkg-config`, then looks for `cppad/cppad.hpp` and
 `libcppad_lib`.
+
+## Python bindings (T37)
+
+An optional `yabi` Python module exposes the integrator on the analytic path:
+the RHS and analytic Jacobian are Python callables, and the state buffers are
+zero-copy NumPy arrays.
+
+```sh
+pip install pybind11         # >= 3.0 (Python 3.14)
+sudo apt install python3-dev # Python.h headers
+cmake -S . -B build-py -DYABI_BUILD_PYTHON=ON
+cmake --build build-py --target yabi_python
+ctest --test-dir build-py -R python_bindings
+```
+
+```python
+import numpy as np, yabi
+def f(y):   return np.array([...])   # RHS, n doubles
+def jac(y): return np.array([...])   # column-major J, n*n doubles
+it = yabi.BDFIntegrator(f, jac, n)
+y0 = np.array([...]); atol = np.array([...])
+it.reset_integration(y0, max_step, rtol, atol)   # zero-copy y0
+it.set_algorithm_settings(5, np.finfo(float).eps, True, 1)
+it.integrate(t_end)
+it.get_solution(y_out)                            # zero-copy write into y_out
+```
+
+`bindings/python/test_yabi.py` is the Brusselator smoke test.
 
 ## Usage
 
