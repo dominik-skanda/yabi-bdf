@@ -553,7 +553,7 @@ integrator.setLinearSolver(new yabi::UmfpackLinearSolver<double>()); // takes ow
 ```
 Defaults to dense LAPACK. Supports UMFPACK/KLU via SuiteSparse. See `examples/heat1d_umfpack_literature.cpp`.
 
-### GPU linear solver (experimental, T36)
+### GPU linear solver (experimental, T36/T36b/T36c)
 An opt-in cuSOLVER dense-LU solver offloads the Newton `factorize`/`solve` to a
 GPU through the same `setLinearSolver` seam:
 
@@ -565,14 +565,50 @@ integrator.setLinearSolver(new yabi::CudaLinearSolver<double>());
 ```
 
 Build it with `-DYABI_USE_CUDA=ON` (default OFF — the regular build stays
-CUDA-free). It uses only the host-side cuBLAS/cuSOLVER C API (no `nvcc`), and
-`tests/component/cuda_solver.cpp` (registered when CUDA is on) cross-checks the
-GPU state solve against the dense LAPACK path on HIRES to ~3e-16. **Scope
-(honest):** this offloads the linear solve only — the Jacobian `J` is still
-assembled on the host and copied over as `P`; the Jacobian-on-GPU and sparse
-(cuSPARSE) paths are future extensions. The cuBLAS/cuSOLVER API is stable across
-CUDA 12.6 → 13, so the solver is source-identical on both (only `-arch`/driver
-change). Requires CUDA (built against 12.6) + an NVIDIA driver.
+CUDA-free, with zero CUDA headers/libraries). It uses only the host-side
+cuBLAS/cuSOLVER C API (no `nvcc`), and links `-lcusolver -lcudart`.
+
+Each instance owns its own CUDA stream + cuSOLVER handle (`cusolverDnSetStream`)
+plus pinned host staging buffers (`cudaMallocHost`) with stream-ordered
+`cudaMemcpyAsync` copies, so transfer can overlap compute and **multiple
+instances run in parallel without serializing** on the default stream
+(`tests/component/cuda_parallel.cpp` runs 4 concurrent integrators, each matching
+the CPU reference). `tests/component/cuda_solver.cpp` cross-checks the GPU state
+solve against dense LAPACK on HIRES to ~3e-16.
+
+**Scope (honest):** this offloads the *linear solve* only — the Jacobian `J` is
+still assembled on the host; the Jacobian-on-GPU and sparse (cuSPARSE) paths are
+future extensions. Throughput on a small card (GTX 1050) is modest: ~1.2–1.3× for
+4 concurrent instances at n ≈ 1000–2000, slower at n ≈ 400 (contention). The
+cuBLAS/cuSOLVER API is stable across CUDA 12.6 → 13, so the solver is
+source-identical on both (only `-arch`/driver change). Requires CUDA (built
+against 12.6) + an NVIDIA driver.
+
+### External sparse solvers (open architecture, T36d)
+The solver architecture is **open**: `setLinearSolver` takes any `LinearSolver`,
+and `include/yabi/external_sparse_solver.hpp` provides `ExternalSparseSolver` —
+the reusable, solver-agnostic half (CSC→CSR handoff + factorize/solve plumbing).
+A concrete adapter implements only `buildCsc` (build the solver from CSR) and
+`solveOne` (solve one RHS), so adding a solver is a ~30-line adapter that never
+touches the integrator core. We **integrate sophisticated open-source solvers,
+we do not reimplement them**.
+
+The first adapter is **AMGCL** (MIT, header-only AMG + Krylov):
+
+```cpp
+#include <yabi/bdf_integrator.hpp>
+#include <yabi/amgcl_linear_solver.hpp>
+
+integrator.setLinearSolver(new yabi::AmgclLinearSolver<double>()); // BiCGStab + ILU(k)
+```
+
+Build with `-DYABI_USE_AMGCL=ON` (default OFF — dependency-free). Provision the
+headers once (no sudo): AMGCL → `~/.local/opt/amgcl`, Boost → `~/.local/opt/boost`
+(download the AMGCL tarball and `libboost1.83-dev` via `apt download`, extract).
+`tests/component/amgcl_solver.cpp` cross-checks it vs dense LAPACK on HIRES to
+`4.4e-16`. The BDF Newton matrix is non-symmetric, so the default is
+BiCGStab+ILU; AMG+CG is the SPD-only alternative. Further adapters (Ginkgo,
+cuDSS) reuse the same `ExternalSparseSolver` base.
 
 ### Matrix-free Newton–Krylov (state solve)
 ```cpp

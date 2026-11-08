@@ -94,6 +94,29 @@ if(YABI_USE_CUDA)
 endif()
 
 # ---------------------------------------------------------------------------
+# External open-source sparse solver adapter (T36d): AMGCL (header-only, MIT) +
+# Boost headers.  OFF by default; the default build stays dependency-free.  The
+# adapter is an EXAMPLE of the open solver architecture (swap the solver by
+# swapping the adapter object).
+# ---------------------------------------------------------------------------
+option(YABI_USE_AMGCL "Build the external AMGCL sparse-solver adapter + test (T36d)" OFF)
+if(YABI_USE_AMGCL)
+    find_path(AMGCL_INCLUDE_DIR amgcl/backend/builtin.hpp
+        PATHS $ENV{HOME}/.local/opt/amgcl /usr/local/include /usr/include
+        PATH_SUFFIXES include)
+    find_path(BOOST_INCLUDE_DIR boost/version.hpp
+        PATHS $ENV{HOME}/.local/opt/boost /usr/local/include /usr/include
+        PATH_SUFFIXES include)
+    find_package(OpenMP QUIET)
+    if(AMGCL_INCLUDE_DIR AND BOOST_INCLUDE_DIR)
+        message(STATUS "AMGCL found: ${AMGCL_INCLUDE_DIR} (Boost: ${BOOST_INCLUDE_DIR})")
+    else()
+        message(FATAL_ERROR
+            "YABI_USE_AMGCL=ON but AMGCL or Boost headers were not found (see README for provisioning).")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Library
 # ---------------------------------------------------------------------------
 add_library(yabi src/bdf_integrator.cpp)

@@ -83,6 +83,20 @@ if(YABI_USE_CUDA)
     set_tests_properties(cuda_parallel PROPERTIES LABELS "component;cuda")
 endif()
 
+# T36d — external open-source sparse solver adapter (AMGCL), registered only when
+# YABI_USE_AMGCL=ON, so the default build stays dependency-free.
+if(YABI_USE_AMGCL)
+    add_executable(yabi_test_amgcl_solver
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/amgcl_solver.cpp")
+    target_include_directories(yabi_test_amgcl_solver PRIVATE ${AMGCL_INCLUDE_DIR} ${BOOST_INCLUDE_DIR})
+    target_link_libraries(yabi_test_amgcl_solver PRIVATE yabi)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(yabi_test_amgcl_solver PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    add_test(NAME amgcl_solver COMMAND yabi_test_amgcl_solver)
+    set_tests_properties(amgcl_solver PROPERTIES LABELS "component;amgcl")
+endif()
+
 # ---------------------------------------------------------------------------
 # System tier — the mathematical testbench.
 # ---------------------------------------------------------------------------
