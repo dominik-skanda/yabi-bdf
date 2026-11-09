@@ -233,6 +233,12 @@ if(YABI_BUILD_PYTHON)
     set_tests_properties(python_bindings PROPERTIES
         ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>"
         LABELS "python")
+    # T38 — forward/reverse (adjoint) bindings vs central differences (no torch needed).
+    add_test(NAME python_autograd
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_autograd.py)
+    set_tests_properties(python_autograd PROPERTIES
+        ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>"
+        LABELS "python")
 endif()
 
 # T44 — telemetry harness: emits the machine-readable evidence table consumed by

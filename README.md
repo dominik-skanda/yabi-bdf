@@ -165,10 +165,16 @@ it.integrate(t_end)
 it.get_solution(y_out)                            # zero-copy write into y_out
 ```
 
-`bindings/python/test_yabi.py` is the Brusselator smoke test.
+`bindings/python/test_yabi.py` is the Brusselator smoke test;
+`bindings/python/test_autograd.py` checks the continuous-adjoint binding against
+central differences.
 
-Not yet exposed in Python: sensitivities (forward/reverse/adjoint), time-dependent
-RHS, and the CppAD auto-diff path — the next milestone (T38 autograd hooks).
+The first-order **continuous adjoint** (stable reverse sensitivity) is exposed as
+`integrator.continuous_adjoint(seed_weights, adj_y0)` — the backward hook for
+autograd wrappers.  `bindings/python/torch_wrapper.py` wraps it in a
+`torch.autograd.Function` (forward solve + adjoint backward), so gradients flow
+through the ODE solve w.r.t. the initial condition.  Not yet exposed in Python:
+forward-mode sensitivities, time-dependent RHS, and the CppAD auto-diff path.
 
 ## Usage
 

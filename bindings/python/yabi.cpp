@@ -67,12 +67,14 @@ PYBIND11_MODULE(yabi, m) {
              "Construct from Python callables f(y)->f and jac(y)->J (column-major).")
         .def("reset_integration",
              [](Integrator &it, py::array_t<double> y0, double max_step, double rtol,
-                py::array_t<double> atol) {
+                py::array_t<double> atol, bool taping) {
                  // Zero-copy: hand YABI the raw buffer pointers (no copy).
+                 // `taping` records the trajectory so forward()/reverse() replay.
                  return it.resetIntegration(y0.mutable_data(), max_step, rtol, atol.mutable_data(),
-                                            false, false, nullptr, nullptr, nullptr, nullptr, 0);
+                                            taping, false, nullptr, nullptr, nullptr, nullptr, 0);
              },
-             py::arg("y0"), py::arg("max_step"), py::arg("rtol"), py::arg("atol"))
+             py::arg("y0"), py::arg("max_step"), py::arg("rtol"), py::arg("atol"),
+             py::arg("taping") = false)
         .def("integrate",
              [](Integrator &it, double t_end) { return it.performIntegration(t_end, 10000000); },
              py::arg("t_end"))
@@ -82,6 +84,15 @@ PYBIND11_MODULE(yabi, m) {
                  return it.getSolutionVector(y.mutable_data());
              },
              py::arg("y"))
+        // First-order continuous adjoint (T25): adj = d(seed_weights . y(T)) / d y0.
+        // This is the stable, analytic-path reverse (the discrete reverse() is
+        // CppAD-only), so it is the backward hook for autograd wrappers.
+        .def("continuous_adjoint",
+             [](Integrator &it, py::array_t<double> seed_weights, py::array_t<double> adj_y0) {
+                 return it.continuousAdjoint(seed_weights.mutable_data(), adj_y0.mutable_data(),
+                                             nullptr);
+             },
+             py::arg("seed_weights"), py::arg("adj_y0"))
         .def("set_algorithm_settings",
              [](Integrator &it, unsigned max_order, double mach_prec, bool hit_end,
                 unsigned ew_index) {
