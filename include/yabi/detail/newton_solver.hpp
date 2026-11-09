@@ -615,7 +615,7 @@ template <typename Scalar> class NewtonSolver {
             for (j = 0; j < numOfSpecies; j++)
                 temp[j] = (Scalar)scalbn(b[j], scaling_D2[j]);
 
-            // Damped Newton (backtracking line search), opt-in (T45).  On an
+            // Damped Newton (backtracking line search), opt-in.  On an
             // ill-conditioned Newton system the full step can overshoot, so when
             // it would increase the BDF residual, backtrack (halve the correction)
             // until the residual decreases (Nocedal & Wright §11).  Gated to the
@@ -1308,7 +1308,7 @@ template <typename Scalar> class NewtonSolver {
     // 0 repeat step, 1 next step, 2 output, 3/4 fatal.
     unsigned int acceptCorrectorVector() {
         Scalar blasScalarONE = (Scalar)1.0;
-        // Minimal step-size floor hmin = 4*eps*|t| (LSODE's hmin; see the
+        // Minimal step-size floor hmin = 4*eps*|t| (Hairer & Wanner §III.7; see the
         // "relaxing step size!" clamps below).  The clamps set h to *exactly*
         // hmin, so the acceptance branches must test h <= hmin (and the
         // still-reducible branch h > hmin): a strict h < hmin never matches the

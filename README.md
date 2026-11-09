@@ -275,7 +275,7 @@ well-behaved problems** (they accept on the first attempt, so no order reduction
 and each reduction is recorded in the sensitivity tape so forward/reverse replays reconstruct
 the correct order sequence.
 
-### Extreme-stiffness behaviour (EMEP) — diagnosed and fixed
+### Extreme-stiffness behaviour (EMEP)
 
 On the hardest stiff benchmarks (the CWI "Test Set for IVP Solvers" **EMEP** problem — 66
 species, stiffness ratio ~1e14) the plain defaults used to stall with `too much steps rejected`.
@@ -287,7 +287,7 @@ matched the floored value, so once a stiff transient drove the step down to the 
 local-error test could no longer be satisfied and the step was rejected forever.  The fix tests
 `h <= 4·eps·|t|` (and `h > 4·eps·|t|` in the still-reducible branch), so at the floor the step
 is accepted with a warning rather than rejected indefinitely — the standard `hmin` handling
-(Hairer & Wanner §III.7; the LSODE/DASSL `hmin` acceptance).
+(Hairer & Wanner §III.7).
 
 With that, EMEP matches its CWI reference to ~8e-6 with **default Newton settings and no fixed
 order** — only the standard stiff-BDF max order of 5 (BDF6 is not A(α)-stable; see
@@ -310,8 +310,7 @@ Mazzia et al., "Test Set for IVP Solvers".
 The mathematical formulation is the [dissertation by Dominik Skanda](https://freidok.uni-freiburg.de/data/8787)
 (University of Freiburg).  **That method is correct and remains the baseline**: a variable-order,
 variable-step BDF corrector with a Milne (corrector–predictor) local-error estimator and an
-**error-per-step (EPS)** acceptance test — the dissertation's original estimator, which is *kept* (a
-different convention, error-per-unit-step, was assessed in T22 and rejected for this controller; see below).
+**error-per-step (EPS)** acceptance test — the dissertation's original estimator, which is *kept*.
 
 Two **deliberate, literature-referenced robustness additions** sit on top of that baseline.  Both are
 **no-ops on well-behaved problems** (they fire only on the pathological cases they exist for), so the
@@ -328,22 +327,6 @@ minimal-step floor sets `h = 4·eps·|t|` *exactly*.  Correcting the test to `h 
 the escape fire as it was always intended, which is what lets the extreme-stiffness EMEP problem
 complete (see above).  It is likewise a no-op on well-behaved problems: a healthy step is far above
 the floor, so the comparison outcome is unchanged.
-
-Techniques from the literature that were **investigated and deliberately not adopted** (each was
-spike-tested and reverted because it trades one benchmark against another), so the method's core stays
-the dissertation's:
-
-| technique | source | why not adopted |
-|---|---|---|
-| error-per-unit-step (EPUS) | Hairer & Wanner §III.7 | collapses the step on Robertson (T22) |
-| order-selection bias | Byrne & Hindmarsh (1975) | no benefit (T46) |
-| fixed Newton give-up rate (`rate > 0.9`) | Hairer & Wanner §IV.8 | regresses the Oregonator (T47) |
-
-The honest bottom line is stated above: the core is **sound and correct**, the two adopted
-additions are the *robustness* part, and the EMEP stall was the one-character boundary bug fixed
-above.  Each change is traceable to the named literature.  Combining further standard techniques
-(rate-based Newton termination, error-per-unit-step, and a coordinated Jacobian-refresh strategy)
-into the controller is a larger, separately-scoped effort.
 
 ## Sensitivity API
 
