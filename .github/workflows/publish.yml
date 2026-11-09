@@ -1,0 +1,66 @@
+name: Build wheels and publish
+
+# Builds manylinux wheels (CPython 3.10–3.14) + the sdist and publishes them to
+# PyPI.  The wheels are built inside a manylinux container (so the glibc symbol
+# floor is old enough for PyPI's `manylinux_*` tags) and `auditwheel repair`-ed
+# by cibuildwheel to bundle the BLAS/LAPACK runtime.
+#
+# Release flow: bump `version` in pyproject.toml, tag `v<version>`, push the tag
+# (or run this workflow manually via `workflow_dispatch`).
+#
+# Required secret (GitHub → Settings → Secrets and variables → Actions):
+#   PYPI_API_TOKEN — a PyPI API token (username __token__, scope "entire account").
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build wheels + sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels (manylinux)
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_SKIP: "*musllinux*"
+          # Pin the manylinux image: manylinux2014 (CentOS 7) is EOL and its yum
+          # repos are dead, so use manylinux_2_28 (AlmaLinux 8) for every Python.
+          CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
+          # The C++ core links BLAS/LAPACK (OpenBLAS) + gfortran; install them in
+          # the manylinux image so the wheel bundles them at repair time.
+          CIBW_BEFORE_ALL_LINUX: "yum install -y openblas-devel gcc-gfortran"
+
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist
+          cp dist/*.tar.gz wheelhouse/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: wheelhouse/*
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
