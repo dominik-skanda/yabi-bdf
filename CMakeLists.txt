@@ -174,13 +174,20 @@ target_include_directories(yabi
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_include_directories(yabi SYSTEM PUBLIC ${CPPAD_INCLUDE_DIR})
+# CppAD is optional here (the wheel build has no CppAD); only reference its
+# include dir / library when it was actually found, so the target does not
+# record a NOTFOUND path at generate time.
+if(CPPAD_INCLUDE_DIR AND NOT CPPAD_INCLUDE_DIR MATCHES "-NOTFOUND$")
+    target_include_directories(yabi SYSTEM PUBLIC ${CPPAD_INCLUDE_DIR})
+endif()
 target_link_libraries(yabi
     PUBLIC
         ${LAPACK_LIBRARIES}
         ${BLAS_LIBRARIES}
-        ${CPPAD_LINK_LIBRARIES}
 )
+if(CPPAD_LINK_LIBRARIES)
+    target_link_libraries(yabi PUBLIC ${CPPAD_LINK_LIBRARIES})
+endif()
 set_target_properties(yabi PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     VERSION ${PROJECT_VERSION}
