@@ -255,6 +255,12 @@ if(YABI_BUILD_PYTHON)
         set_tests_properties(python_nn_module PROPERTIES
             ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
             LABELS "python")
+        # T53 — parallel batch (threads=N bit-identical to serial).
+        add_test(NAME python_batch_parallel
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_batch_parallel.py)
+        set_tests_properties(python_batch_parallel PROPERTIES
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            LABELS "python")
     endif()
 endif()
 

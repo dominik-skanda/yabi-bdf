@@ -20,6 +20,8 @@ import numpy as np
 import torch
 import yabi
 
+from concurrent.futures import ThreadPoolExecutor
+
 
 def _wrap_rhs(f):
     """f: torch callable y -> f(y).  Return a numpy-in/out RHS for the binding."""
@@ -58,7 +60,8 @@ def _automatic_jvp(f):
     return jv_np
 
 
-def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver="dense"):
+def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver="dense",
+              threads=1):
     """Solve y' = f(y), y(t0) = y0 to y(t1), differentiable in y0.
 
     Args:
@@ -70,6 +73,9 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
             None, the Jacobian is computed automatically with torch.autograd.
         solver: "dense" (full Jacobian, dense Newton) or "matrix_free" (J·v via
             torch.autograd, GMRES Newton — no full Jacobian).
+        threads: number of trajectories solved concurrently (default 1 = serial).
+            Independent trajectories are solved on a thread pool; the result is
+            bit-identical to serial.
 
     Returns:
         y(t1) as a torch float64 tensor with the same batch shape, carrying a
@@ -82,6 +88,7 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
     n = y0.shape[-1]
     if y0.dtype != torch.float64:
         raise TypeError("y0 must be torch.float64 (YABI is double precision)")
+    threads = max(1, int(threads))
 
     f_np = _wrap_rhs(f)
     if solver == "matrix_free":
@@ -102,30 +109,54 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
         def forward(ctx, y0_batch):
             y0_np = y0_batch.detach().numpy()  # (batch, n)
             batch = y0_np.shape[0]
-            atol_np = np.full(n, atol)
-            integrators = []
-            yT = np.empty((batch, n))
-            for b in range(batch):
+
+            def solve_one(b):
                 it = make()
-                assert it.reset_integration(y0_np[b], t_end, rtol, atol_np)
+                assert it.reset_integration(y0_np[b], t_end, rtol, np.full(n, atol))
                 it.set_algorithm_settings(5, np.finfo(np.float64).eps, True, 1)
                 assert it.integrate(t_end)
                 yb = np.zeros(n)
                 assert it.get_solution(yb)
-                yT[b] = yb
-                integrators.append(it)
+                return it, yb
+
+            if threads > 1 and batch > 1:
+                with ThreadPoolExecutor(max_workers=threads) as ex:
+                    results = list(ex.map(solve_one, range(batch)))
+                integrators = [r[0] for r in results]
+                yT = np.stack([r[1] for r in results])
+            else:
+                integrators, rows = [], []
+                for b in range(batch):
+                    it, yb = solve_one(b)
+                    integrators.append(it)
+                    rows.append(yb)
+                yT = np.stack(rows)
+
             ctx.integrators = integrators
             ctx.n = n
+            ctx.threads = threads
             return torch.as_tensor(yT, dtype=y0_batch.dtype)
 
         @staticmethod
         def backward(ctx, grad_yT):
-            grad_np = grad_yT.detach().numpy()  # (batch, n)
-            adj = np.empty((grad_np.shape[0], ctx.n))
-            for b in range(grad_np.shape[0]):
+            # Copy (not view): grad_yT.detach().numpy() shares memory with the
+            # torch gradient tensor, and the adjoint's nested autograd can reuse
+            # that buffer while it is still being read as the seed, corrupting
+            # the batched gradient (single-trajectory happens not to trigger it).
+            grad_np = np.array(grad_yT.detach().numpy())  # (batch, n)
+            batch = grad_np.shape[0]
+
+            def adjoint_one(b):
                 adj_b = np.zeros(ctx.n)
                 assert ctx.integrators[b].continuous_adjoint(grad_np[b], adj_b)
-                adj[b] = adj_b
+                return adj_b
+
+            if ctx.threads > 1 and batch > 1:
+                with ThreadPoolExecutor(max_workers=ctx.threads) as ex:
+                    adj_rows = list(ex.map(adjoint_one, range(batch)))
+                adj = np.stack(adj_rows)
+            else:
+                adj = np.stack([adjoint_one(b) for b in range(batch)])
             return torch.as_tensor(adj, dtype=grad_yT.dtype)
 
     single = y0.dim() == 1

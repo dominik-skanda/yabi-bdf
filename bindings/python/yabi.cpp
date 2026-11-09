@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -39,9 +40,40 @@ struct PyCallable {
     std::size_t in_size;
     std::size_t out_size;
 
+    PyCallable(py::object f, std::size_t in, std::size_t out)
+        : fn(std::move(f)), in_size(in), out_size(out) {}
+
+    ~PyCallable() {
+        // The RHS may be destroyed with the GIL released (the adjoint's cloned
+        // RHS is destroyed inside continuousAdjoint); drop the reference under
+        // the GIL so the member destructor's dec_ref is a no-op.
+        py::gil_scoped_acquire acquire;
+        fn = py::object();
+    }
+
+    // The RHS is cloned by the integrator core (e.g. inside continuousAdjoint),
+    // which may run with the GIL released; copying the py::object must therefore
+    // (re-)acquire it for the refcount.  Reentrant no-op when already held.
+    PyCallable(const PyCallable &other) : in_size(other.in_size), out_size(other.out_size) {
+        py::gil_scoped_acquire acquire;
+        fn = other.fn;
+    }
+    PyCallable &operator=(const PyCallable &other) {
+        if (this == &other)
+            return *this;
+        py::gil_scoped_acquire acquire;
+        fn = other.fn;
+        in_size = other.in_size;
+        out_size = other.out_size;
+        return *this;
+    }
+
     void operator()(const double *y, double *out) const {
-        // The caller holds the GIL (pybind11 does not release it here), so we
-        // can call straight back into Python.
+        // The caller may have released the GIL (integrate/continuous_adjoint do,
+        // so independent trajectories can solve in parallel); re-acquire it here
+        // to call back into Python.  No-op when the current thread already holds
+        // the GIL (e.g. during reset_integration).
+        py::gil_scoped_acquire acquire;
         py::array_t<double> y_view(in_size, const_cast<double *>(y));
         py::array_t<double> r = py::array_t<double>::ensure(fn(y_view));
         if (r.ndim() != 1 || r.size() != static_cast<py::ssize_t>(out_size)) {
@@ -78,7 +110,13 @@ PYBIND11_MODULE(yabi, m) {
              py::arg("y0"), py::arg("max_step"), py::arg("rtol"), py::arg("atol"),
              py::arg("taping") = false)
         .def("integrate",
-             [](Integrator &it, double t_end) { return it.performIntegration(t_end, 10000000); },
+             [](Integrator &it, double t_end) {
+                 // Release the GIL so independent trajectories (each their own
+                 // Integrator) solve concurrently; the RHS/Jacobian callbacks
+                 // re-acquire it when they call back into Python.
+                 py::gil_scoped_release release;
+                 return it.performIntegration(t_end, 10000000);
+             },
              py::arg("t_end"))
         .def("get_solution",
              [](Integrator &it, py::array_t<double> y) {
@@ -91,8 +129,18 @@ PYBIND11_MODULE(yabi, m) {
         // CppAD-only), so it is the backward hook for autograd wrappers.
         .def("continuous_adjoint",
              [](Integrator &it, py::array_t<double> seed_weights, py::array_t<double> adj_y0) {
-                 return it.continuousAdjoint(seed_weights.mutable_data(), adj_y0.mutable_data(),
-                                             nullptr);
+                 // Snapshot the raw pointers first (pybind11 NumPy access needs
+                 // the GIL), then release it so the backward adjoint loop over
+                 // trajectories parallelizes.  The release is scoped so the GIL
+                 // is re-acquired before the array arguments are destroyed.
+                 double *seed = seed_weights.mutable_data();
+                 double *adj = adj_y0.mutable_data();
+                 bool ok;
+                 {
+                     py::gil_scoped_release release;
+                     ok = it.continuousAdjoint(seed, adj, nullptr);
+                 }
+                 return ok;
              },
              py::arg("seed_weights"), py::arg("adj_y0"))
         .def("set_algorithm_settings",
@@ -110,6 +158,9 @@ PYBIND11_MODULE(yabi, m) {
     m.def("matrix_free_integrator",
           [](py::object f, py::object jv, std::size_t n) {
               auto jv_fn = [jv, n](const double *y, const double *v, double *Jv) {
+                  // integrate() releases the GIL; re-acquire it to call the
+                  // Python JVP back.
+                  py::gil_scoped_acquire acquire;
                   py::array_t<double> y_arr(n, const_cast<double *>(y));
                   py::array_t<double> v_arr(n, const_cast<double *>(v));
                   py::array_t<double> r = py::array_t<double>::ensure(jv(y_arr, v_arr));
@@ -125,15 +176,23 @@ PYBIND11_MODULE(yabi, m) {
               it->setJacobianBackend(yabi::JacobianBackend::MatrixFree);
               auto *solver = new yabi::GmresLinearSolver<double>();
               solver->setTolerance(1e-10, 0.0, 200, 30);
-              // J-free identity preconditioner (borrowed by the solver; kept
-              // alive for the module's lifetime).
+              // J-free identity preconditioner, borrowed by the solver (setUser
+              // Preconditioner stores a raw pointer) and kept alive for the
+              // module's lifetime.  Each integrator gets its own instance (the
+              // preconditioner stores its n across update/apply, so it is NOT
+              // stateless and cannot be shared).  The vector is append-only and
+              // guarded so concurrent construction (parallel batch) is safe.
+              static std::mutex keep_alive_mutex;
               static std::vector<std::shared_ptr<yabi::FunctionPreconditioner<double>>> keep_alive;
               auto prec = std::make_shared<yabi::FunctionPreconditioner<double>>(
                   false, [](const double *r, double *z, unsigned int sz) {
                       std::copy(r, r + sz, z);
                       return true;
                   });
-              keep_alive.push_back(prec);
+              {
+                  std::lock_guard<std::mutex> lock(keep_alive_mutex);
+                  keep_alive.push_back(prec);
+              }
               solver->setUserPreconditioner(prec.get());
               it->setLinearSolver(solver);
               return it;

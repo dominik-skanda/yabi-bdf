@@ -59,6 +59,29 @@ def test_batch():
     print("batch: OK")
 
 
+def test_batch_backward():
+    # The batched adjoint (backward) must match the single-trajectory adjoint.
+    # Guards the buffer-aliasing fix: grad_yT.detach().numpy() shares memory
+    # with the torch gradient tensor, and the adjoint's nested autograd reused
+    # it mid-read, corrupting the batched gradient.
+    single = torch.tensor([1.0, 0.5, 0.25, 0.125], dtype=torch.float64)
+    batch = torch.stack([single, single * 1.1, single * 0.9]).requires_grad_()
+
+    s = single.clone().requires_grad_()
+    ys = yabi_torch.solve_ivp(decay_f, s, t_span=(0.0, 2.0))
+    ys.sum().backward()
+
+    yb = yabi_torch.solve_ivp(decay_f, batch, t_span=(0.0, 2.0))
+    yb.sum().backward()
+
+    # linear ODE: d(sum y)/dy0 is constant across trajectories.
+    assert torch.allclose(batch.grad[0], s.grad, atol=1e-12), \
+        f"{batch.grad[0]} vs {s.grad}"
+    assert torch.allclose(batch.grad[1], s.grad, atol=1e-12)
+    assert torch.allclose(batch.grad[2], s.grad, atol=1e-12)
+    print("batch backward == single adjoint: OK")
+
+
 def test_stiff():
     def f(y):  # Robertson (classic stiff)
         return torch.stack([-0.04 * y[0] + 1e4 * y[1] * y[2],
@@ -92,6 +115,7 @@ if __name__ == "__main__":
     test_analytic_matches_automatic()
     test_matrix_free_matches_dense()
     test_batch()
+    test_batch_backward()
     test_stiff()
     test_stiff_matrix_free()
     print("PASS: batched differentiable solve_ivp (dense + matrix-free, analytic + automatic)")

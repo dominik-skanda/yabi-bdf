@@ -175,15 +175,20 @@ autograd wrappers.  `bindings/python/torch_wrapper.py` wraps it in a
 `torch.autograd.Function` (forward solve + adjoint backward), so gradients flow
 through the ODE solve w.r.t. the initial condition.  `bindings/python/yabi_torch.py`
 provides a batched, differentiable `solve_ivp(f, y0, t_span, rtol, atol, jac=None,
-solver="dense")` on top of it: `f` is a `torch.nn.Module` (or any torch callable
-`y -> f(y)`), the Jacobian is **automatic** from `torch.autograd` unless an
+solver="dense", threads=1)` on top of it: `f` is a `torch.nn.Module` (or any torch
+callable `y -> f(y)`), the Jacobian is **automatic** from `torch.autograd` unless an
 analytic `jac` is given, and `solver="matrix_free"` drives the Newton solve with a
 `torch.autograd` JVP (forward-mode, one `J·v` per Krylov iteration) instead of the
 full n×n Jacobian.  `y0` may be a batch; the gradient is the continuous adjoint.
-`test_solve_ivp.py` runs the `torch.autograd.gradcheck`, batch, and stiff Robertson
-checks (dense + matrix-free); `test_nn_module.py` checks an `nn.Module` `f` against
-the matrix exponential and cross-mode agreement.  Not yet exposed in Python:
-forward-mode sensitivities, time-dependent RHS, and the CppAD auto-diff path.
+`threads=N` solves the batch's independent trajectories concurrently (the binding
+releases the GIL during the C++ solve and re-acquires it only for the Python
+callbacks), bit-identical to serial.
+`test_solve_ivp.py` runs the `torch.autograd.gradcheck`, batch (forward + adjoint),
+and stiff Robertson checks (dense + matrix-free); `test_nn_module.py` checks an
+`nn.Module` `f` against the matrix exponential and cross-mode agreement;
+`test_batch_parallel.py` checks `threads=N` is bit-identical to serial.  Not yet
+exposed in Python: forward-mode sensitivities, time-dependent RHS, and the CppAD
+auto-diff path.
 
 ## Usage
 
