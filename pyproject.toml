@@ -1,0 +1,45 @@
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=3.0", "numpy"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "yabi-torch"
+version = "0.1.0"
+description = "A batched, differentiable ODE solver — YABI's BDF + continuous adjoint, wrapped as a torch-native solve_ivp."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "YABI contributors" },
+]
+keywords = ["ode", "bdf", "torch", "differentiable", "adjoint", "neural-ode"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy",
+    "torch>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dominik-skanda/yabi-bdf"
+Repository = "https://github.com/dominik-skanda/yabi-bdf"
+Issues = "https://github.com/dominik-skanda/yabi-bdf/issues"
+
+[tool.scikit-build]
+# Build only the Python binding on the analytic (CppAD-free) path; no examples,
+# no C++ test suite, no CppAD — a self-contained wheel.
+cmake.args = [
+    "-DYABI_BUILD_PYTHON=ON",
+    "-DYABI_BUILD_TESTS=OFF",
+    "-DYABI_BUILD_EXAMPLES=OFF",
+    "-DYABI_USE_CPPAD=OFF",
+    "-DYABI_INSTALL_CORE=OFF",
+]
+build.targets = ["yabi_python"]
+# The Python solver package (the compiled `yabi` module is installed by CMake).
+wheel.packages = ["python/yabi_torch"]

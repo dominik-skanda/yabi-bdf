@@ -3,6 +3,7 @@ project(YABI VERSION 0.2.0 LANGUAGES CXX)
 
 option(YABI_BUILD_EXAMPLES "Build YABI example programs" ON)
 option(YABI_BUILD_TESTS "Build the unit/component/system test suite" ON)
+option(YABI_INSTALL_CORE "Install the C++ library + headers + CMake config (OFF for Python-only wheels)" ON)
 # Backwards-compatible alias for the old flat testbench (now tests/system).
 # Only consulted when supplied, so fresh configurations see a single toggle.
 if(DEFINED YABI_BUILD_TESTBENCH)
@@ -235,6 +236,9 @@ if(YABI_BUILD_PYTHON)
         target_compile_definitions(yabi_python PRIVATE YABI_HAS_CUDA)
         message(STATUS "yabi_python: CUDA Newton solve enabled (cuSOLVER)")
     endif()
+    # Install the compiled module into the wheel/site-packages root so `import yabi`
+    # resolves (used by scikit-build-core packaging; harmless in a plain build).
+    install(TARGETS yabi_python LIBRARY DESTINATION .)
     # CI-verifiable smoke test (only when the module is built).
     add_test(NAME python_bindings
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_yabi.py)
@@ -255,26 +259,26 @@ if(YABI_BUILD_PYTHON)
         add_test(NAME python_solve_ivp
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_solve_ivp.py)
         set_tests_properties(python_solve_ivp PROPERTIES
-            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/python"
             LABELS "python")
         # T52 — nn.Module f with automatic Jacobian (dense + matrix-free).
         add_test(NAME python_nn_module
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_nn_module.py)
         set_tests_properties(python_nn_module PROPERTIES
-            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/python"
             LABELS "python")
         # T53 — parallel batch (threads=N bit-identical to serial).
         add_test(NAME python_batch_parallel
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_batch_parallel.py)
         set_tests_properties(python_batch_parallel PROPERTIES
-            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/python"
             LABELS "python")
         # T54 — GPU (device="cuda"): skips cleanly when torch CUDA / a CUDA build
         # of the module is absent.
         add_test(NAME python_cuda
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_cuda.py)
         set_tests_properties(python_cuda PROPERTIES
-            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/python"
             LABELS "python")
     endif()
 endif()
@@ -320,6 +324,7 @@ endif()
 # Install
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
+if(YABI_INSTALL_CORE)
 if(YABI_USE_CPPAD)
 install(TARGETS yabi
     EXPORT YABITargets
@@ -338,6 +343,7 @@ install(EXPORT YABITargets
     NAMESPACE YABI::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/YABI
 )
+endif()
 
 # Optional: UMFPACK sparse solver example (if SuiteSparse available)
 find_path(UMFPACK_INCLUDE_DIR umfpack.h PATHS /usr/include/suitesparse)

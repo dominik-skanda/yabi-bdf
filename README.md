@@ -27,6 +27,32 @@ sensitivity analysis through CppAD automatic differentiation.
   milestone — see "Python bindings" below).
 - **C++17**, BLAS/LAPACK, and an external CppAD installation.
 
+## yabi-torch — `pip install yabi-torch`
+
+A batched, differentiable `solve_ivp` for torch, on top of the BDF + continuous adjoint:
+
+```bash
+pip install yabi-torch
+```
+
+```python
+import torch
+from yabi_torch import solve_ivp
+
+def f(y):  # y' = f(y) — any torch.nn.Module or callable
+    return torch.stack([-0.04 * y[0] + 1e4 * y[1] * y[2],
+                        0.04 * y[0] - 1e4 * y[1] * y[2] - 3e7 * y[1] ** 2,
+                        3e7 * y[1] ** 2])
+
+y0 = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64, requires_grad=True)
+yT = solve_ivp(f, y0, t_span=(0.0, 1e5), rtol=1e-6, atol=1e-10)
+yT.sum().backward()   # y0.grad = d(sum y(T)) / d y0 via the continuous adjoint
+```
+
+`f` is a `torch.nn.Module` (or any callable `y -> f(y)` on a float64 tensor); the Jacobian is **automatic**
+(`torch.autograd`) unless you pass an analytic `jac`. See "Python bindings" below for the full API
+(`solver="dense"|"matrix_free"`, `threads=N` for a parallel batch, `device="cuda"`).
+
 ## Quick Verification
 
 Prove tolerance adherence, first-order convergence, and higher-order sensitivity

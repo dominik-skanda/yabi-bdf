@@ -2,6 +2,7 @@ build/
 build-pure/
 build-py/
 build-py-cuda/
+dist/
 bin/
 build-cmake/
 cmake-build-*/
