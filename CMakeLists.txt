@@ -227,6 +227,14 @@ if(YABI_BUILD_PYTHON)
     # C++ `yabi` library target).
     set_target_properties(yabi_python PROPERTIES OUTPUT_NAME "yabi")
     target_link_libraries(yabi_python PRIVATE yabi_pure)
+    # T54 — optional CUDA (cuSOLVER) Newton solve in the Python module.  Reuses
+    # the CUDA detection above; the default build stays CUDA-free.
+    if(YABI_USE_CUDA AND CUDA_INCLUDE_DIR AND CUSOLVER_LIBRARY AND CUDART_LIBRARY)
+        target_include_directories(yabi_python PRIVATE ${CUDA_INCLUDE_DIR})
+        target_link_libraries(yabi_python PRIVATE ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+        target_compile_definitions(yabi_python PRIVATE YABI_HAS_CUDA)
+        message(STATUS "yabi_python: CUDA Newton solve enabled (cuSOLVER)")
+    endif()
     # CI-verifiable smoke test (only when the module is built).
     add_test(NAME python_bindings
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_yabi.py)
@@ -259,6 +267,13 @@ if(YABI_BUILD_PYTHON)
         add_test(NAME python_batch_parallel
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_batch_parallel.py)
         set_tests_properties(python_batch_parallel PROPERTIES
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            LABELS "python")
+        # T54 — GPU (device="cuda"): skips cleanly when torch CUDA / a CUDA build
+        # of the module is absent.
+        add_test(NAME python_cuda
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_cuda.py)
+        set_tests_properties(python_cuda PROPERTIES
             ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
             LABELS "python")
     endif()

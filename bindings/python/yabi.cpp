@@ -20,6 +20,13 @@
 #include <yabi/matrix_free_solver.hpp>
 #include <yabi/user_ode_rhs.hpp>
 
+// T54 — optional CUDA (cuSOLVER) Newton solve.  Only compiled when the module
+// is built with YABI_USE_CUDA (the CMake side links cuSOLVER/cudart and defines
+// YABI_HAS_CUDA); the default build stays CUDA-free.
+#ifdef YABI_HAS_CUDA
+#include <yabi/cuda_linear_solver.hpp>
+#endif
+
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -198,4 +205,18 @@ PYBIND11_MODULE(yabi, m) {
               return it;
           },
           py::arg("f"), py::arg("jv"), py::arg("n"));
+
+#ifdef YABI_HAS_CUDA
+    // T54 — dense Newton solve offloaded to the GPU via cuSOLVER (CudaLinearSolver).
+    // f/jac still run on the host (numpy); only the O(n³) factorize + solve are
+    // on-device.  Used by solve_ivp's device="cuda" (dense).
+    m.def("cuda_integrator",
+          [](py::object f, py::object jac, std::size_t n) {
+              yabi::UserODERHS<double> rhs(n, PyCallable{f, n, n}, PyCallable{jac, n, n * n});
+              auto *it = new Integrator(rhs);
+              it->setLinearSolver(new yabi::CudaLinearSolver<double>());
+              return it;
+          },
+          py::arg("f"), py::arg("jac"), py::arg("n"));
+#endif
 }

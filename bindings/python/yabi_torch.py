@@ -23,45 +23,48 @@ import yabi
 from concurrent.futures import ThreadPoolExecutor
 
 
-def _wrap_rhs(f):
-    """f: torch callable y -> f(y).  Return a numpy-in/out RHS for the binding."""
+def _wrap_rhs(f, device="cpu"):
+    """f: torch callable y -> f(y).  Return a numpy-in/out RHS for the binding.
+
+    With device="cuda" the state is copied to the GPU per evaluation and f runs
+    on-device; the result is copied back to the host array."""
     def f_np(y_np):
-        y_t = torch.as_tensor(y_np, dtype=torch.float64)
-        return f(y_t).detach().numpy()
+        y_t = torch.as_tensor(y_np, dtype=torch.float64, device=device)
+        return f(y_t).detach().cpu().numpy()
     return f_np
 
 
-def _automatic_jacobian(f, n):
+def _automatic_jacobian(f, n, device="cpu"):
     """Return a numpy-in/out column-major Jacobian via torch.autograd."""
     def jac_np(y_np):
-        y_t = torch.tensor(y_np, dtype=torch.float64, requires_grad=True)
+        y_t = torch.tensor(y_np, dtype=torch.float64, requires_grad=True, device=device)
         # enable_grad: inside a custom autograd.Function.forward grad mode is
         # off, so the derivative here must re-enable it explicitly.
         with torch.enable_grad():
             J = torch.autograd.functional.jacobian(f, y_t)  # (n, n), J[i,j] = df_i/dy_j
-        return J.detach().numpy().T.reshape(-1)             # column-major (n*n)
+        return J.detach().cpu().numpy().T.reshape(-1)       # column-major (n*n)
     return jac_np
 
 
-def _automatic_jvp(f):
+def _automatic_jvp(f, device="cpu"):
     """Return a numpy-in/out Jacobian-vector product J·v via torch.autograd (one JVP).
 
     Uses forward-mode JVP (functional.jvp): torch.autograd.grad would give the
     vector-Jacobian product Jᵀv, which is the *transposed* operator and wrong for
     the matrix-free Newton (it needs J·v)."""
     def jv_np(y_np, v_np):
-        y_t = torch.tensor(y_np, dtype=torch.float64, requires_grad=True)
-        v_t = torch.tensor(v_np, dtype=torch.float64)
+        y_t = torch.tensor(y_np, dtype=torch.float64, requires_grad=True, device=device)
+        v_t = torch.tensor(v_np, dtype=torch.float64, device=device)
         # enable_grad: inside a custom autograd.Function.forward grad mode is
         # off, so the JVP must re-enable it explicitly.
         with torch.enable_grad():
             _, jvp = torch.autograd.functional.jvp(f, y_t, v_t)
-        return jvp.detach().numpy()
+        return jvp.detach().cpu().numpy()
     return jv_np
 
 
 def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver="dense",
-              threads=1):
+              threads=1, device="cpu"):
     """Solve y' = f(y), y(t0) = y0 to y(t1), differentiable in y0.
 
     Args:
@@ -76,6 +79,10 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
         threads: number of trajectories solved concurrently (default 1 = serial).
             Independent trajectories are solved on a thread pool; the result is
             bit-identical to serial.
+        device: "cpu" (default) or "cuda".  "cuda" evaluates f and the Jacobian/JVP
+            on the GPU (f must already be on the device) and, for the dense path,
+            offloads the Newton LU to cuSOLVER (requires a CUDA build of the yabi
+            module).  The state and result stay host-side.
 
     Returns:
         y(t1) as a torch float64 tensor with the same batch shape, carrying a
@@ -89,18 +96,40 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
     if y0.dtype != torch.float64:
         raise TypeError("y0 must be torch.float64 (YABI is double precision)")
     threads = max(1, int(threads))
+    if device not in ("cpu", "cuda"):
+        raise ValueError("device must be 'cpu' or 'cuda'")
+    if device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("device='cuda' requested but torch CUDA is not available")
+        # The f-on-GPU path needs torch CUDA kernels; torch's cu12x wheels dropped
+        # pre-Turing GPUs (min sm_75, CC 7.5), so fail clearly rather than with the
+        # opaque "no kernel image" runtime error.
+        cc = torch.cuda.get_device_capability(0)
+        if (cc[0], cc[1]) < (7, 5):
+            raise RuntimeError(
+                f"device='cuda' needs a GPU with compute capability >= 7.5 "
+                f"(this device is {cc[0]}.{cc[1]}); the f-on-GPU path is unsupported "
+                f"on this GPU.  The cuSOLVER LU offload alone is available via "
+                f"yabi.cuda_integrator.")
+        if solver == "dense" and not hasattr(yabi, "cuda_integrator"):
+            raise RuntimeError(
+                "device='cuda' (dense) requires the yabi module to be built with CUDA "
+                "(YABI_USE_CUDA=ON)")
 
-    f_np = _wrap_rhs(f)
+    f_np = _wrap_rhs(f, device)
     if solver == "matrix_free":
-        jv_np = _automatic_jvp(f)
+        jv_np = _automatic_jvp(f, device)
 
         def make():
             return yabi.matrix_free_integrator(f_np, jv_np, n)
     elif solver == "dense":
-        jac_np = jac if jac is not None else _automatic_jacobian(f, n)
-
-        def make():
-            return yabi.BDFIntegrator(f_np, jac_np, n)
+        jac_np = jac if jac is not None else _automatic_jacobian(f, n, device)
+        if device == "cuda":
+            def make():
+                return yabi.cuda_integrator(f_np, jac_np, n)
+        else:
+            def make():
+                return yabi.BDFIntegrator(f_np, jac_np, n)
     else:
         raise ValueError("solver must be 'dense' or 'matrix_free'")
 
