@@ -62,8 +62,6 @@ jobs:
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -72,4 +70,7 @@ jobs:
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          # Token auth (username __token__); no id-token:write permission here,
+          # otherwise the action tries trusted publishing (OIDC) instead.
+          user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
