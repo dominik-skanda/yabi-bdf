@@ -37,6 +37,10 @@ jobs:
           # The C++ core links BLAS/LAPACK (OpenBLAS) + gfortran; install them in
           # the manylinux image so the wheel bundles them at repair time.
           CIBW_BEFORE_ALL_LINUX: "yum install -y openblas-devel gcc-gfortran"
+          # openblas-devel provides a single libopenblas.so (BLAS+LAPACK), so
+          # tell CMake to use OpenBLAS for both (otherwise find_package(LAPACK)
+          # looks for a separate liblapack.so and fails).
+          CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS"'
 
       - name: Build sdist
         run: |
