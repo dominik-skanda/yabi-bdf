@@ -82,14 +82,20 @@ if(YABI_USE_CUDA)
     find_library(CUSOLVER_LIBRARY cusolver
         PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
         PATH_SUFFIXES lib64 lib)
+    find_library(CUSPARSE_LIBRARY cusparse
+        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
+        PATH_SUFFIXES lib64 lib)
+    find_library(CUBLAS_LIBRARY cublas
+        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
+        PATH_SUFFIXES lib64 lib)
     find_library(CUDART_LIBRARY cudart
         PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
         PATH_SUFFIXES lib64 lib)
-    if(CUDA_INCLUDE_DIR AND CUSOLVER_LIBRARY AND CUDART_LIBRARY)
-        message(STATUS "CUDA (cuSOLVER) found: ${CUDA_INCLUDE_DIR}")
+    if(CUDA_INCLUDE_DIR AND CUSOLVER_LIBRARY AND CUSPARSE_LIBRARY AND CUBLAS_LIBRARY AND CUDART_LIBRARY)
+        message(STATUS "CUDA (cuSOLVER/cuSPARSE/cuBLAS) found: ${CUDA_INCLUDE_DIR}")
     else()
         message(FATAL_ERROR
-            "YABI_USE_CUDA=ON but CUDA (cusolverDn.h, libcusolver, libcudart) was not found.")
+            "YABI_USE_CUDA=ON but CUDA (cusolverDn.h, libcusolver, libcusparse, libcublas, libcudart) was not found.")
     endif()
 endif()
 

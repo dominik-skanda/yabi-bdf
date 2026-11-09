@@ -698,12 +698,33 @@ the CPU reference). `tests/component/cuda_solver.cpp` cross-checks the GPU state
 solve against dense LAPACK on HIRES to ~3e-16.
 
 **Scope (honest):** this offloads the *linear solve* only — the Jacobian `J` is
-still assembled on the host; the Jacobian-on-GPU and sparse (cuSPARSE) paths are
-future extensions. Throughput on a small card (GTX 1050) is modest: ~1.2–1.3× for
-4 concurrent instances at n ≈ 1000–2000, slower at n ≈ 400 (contention). The
-cuBLAS/cuSOLVER API is stable across CUDA 12.6 → 13, so the solver is
-source-identical on both (only `-arch`/driver change). Requires CUDA (built
-against 12.6) + an NVIDIA driver.
+still assembled on the host. The sparse paths are the cuDSS adapter (T36d) and the
+GPU Krylov solver (T36e, below). Throughput on a small card (GTX 1050) is modest:
+~1.2–1.3× for 4 concurrent instances at n ≈ 1000–2000, slower at n ≈ 400
+(contention). The cuBLAS/cuSOLVER API is stable across CUDA 12.6 → 13, so the
+solver is source-identical on both (only `-arch`/driver change). Requires CUDA
+(built against 12.6) + an NVIDIA driver.
+
+### GPU sparse iterative Krylov solver (own implementation, T36e)
+
+For large sparse Newton systems (n ≫ 100) where the dense cuSOLVER factorization
+is too costly, `CudaKrylovSolver` runs a BiCGStab Krylov solve on the GPU — cuBLAS
+for the vector ops and cuSPARSE SpMV for `P·v` — behind the same `setLinearSolver`
+seam. It is **our own implementation** over CUDA primitives (no external library):
+
+```cpp
+#include <yabi/cuda_krylov_solver.hpp>
+auto *solver = new yabi::CudaKrylovSolver<double>();
+solver->setTolerance(1e-10, 0.0, 200, 30);
+solver->setForcingTerm(yabi::eisenstatWalkerForcing<double>()); // inexact Newton
+integrator.setLinearSolver(solver);
+```
+
+Built with `-DYABI_USE_CUDA=ON` (links `-lcusparse -lcublas -lcudart`, no nvcc;
+the default build stays CUDA-free). `tests/component/cuda_krylov_solver.cpp`
+cross-checks it against dense LAPACK on HIRES to ~3e-16;
+`tests/system/cuda_krylov_heat.cpp` solves the method-of-lines heat equation
+(n=500) to the analytic solution.
 
 ### External sparse solvers (open architecture, T36d)
 The solver architecture is **open**: `setLinearSolver` takes any `LinearSolver`,

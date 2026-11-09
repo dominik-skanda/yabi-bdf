@@ -123,6 +123,24 @@ if(YABI_USE_CUDA)
     target_link_libraries(yabi_test_cuda_parallel PRIVATE yabi ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
     add_test(NAME cuda_parallel COMMAND yabi_test_cuda_parallel)
     set_tests_properties(cuda_parallel PROPERTIES LABELS "component;cuda")
+
+    # T36e — GPU sparse iterative Krylov solver (cuSPARSE SpMV + cuBLAS BiCGStab).
+    add_executable(yabi_test_cuda_krylov_solver
+        "${CMAKE_CURRENT_SOURCE_DIR}/component/cuda_krylov_solver.cpp")
+    target_include_directories(yabi_test_cuda_krylov_solver PRIVATE ${CUDA_INCLUDE_DIR})
+    target_link_libraries(yabi_test_cuda_krylov_solver PRIVATE yabi
+        ${CUSPARSE_LIBRARY} ${CUBLAS_LIBRARY} ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+    add_test(NAME cuda_krylov_solver COMMAND yabi_test_cuda_krylov_solver)
+    set_tests_properties(cuda_krylov_solver PROPERTIES LABELS "component;cuda")
+
+    # T36e — GPU Krylov system test (large-sparse method-of-lines heat, n=500).
+    add_executable(yabi_test_cuda_krylov_heat
+        "${CMAKE_CURRENT_SOURCE_DIR}/system/cuda_krylov_heat.cpp")
+    target_include_directories(yabi_test_cuda_krylov_heat PRIVATE ${CUDA_INCLUDE_DIR})
+    target_link_libraries(yabi_test_cuda_krylov_heat PRIVATE yabi
+        ${CUSPARSE_LIBRARY} ${CUBLAS_LIBRARY} ${CUSOLVER_LIBRARY} ${CUDART_LIBRARY})
+    add_test(NAME cuda_krylov_heat COMMAND yabi_test_cuda_krylov_heat)
+    set_tests_properties(cuda_krylov_heat PROPERTIES LABELS "system;cuda")
 endif()
 
 # T36d — external open-source sparse solver adapter (AMGCL), registered only when
