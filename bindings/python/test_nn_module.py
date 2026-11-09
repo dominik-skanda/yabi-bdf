@@ -114,6 +114,69 @@ def test_mlp_gradcheck():
     print("MLP gradcheck (dense): OK")
 
 
+def _fd_param_grad(m, y0, solver, eps=1e-6):
+    """Central-difference gradient of sum(solve_ivp(m, y0)) w.r.t. each parameter."""
+    def loss(mm):
+        return yabi_torch.solve_ivp(mm, y0, t_span=(0.0, 1.0), solver=solver).sum()
+
+    grads = []
+    for p in m.parameters():
+        fd = torch.zeros_like(p)
+        flat = p.detach().flatten().clone()
+        for i in range(flat.numel()):
+            o = flat[i].item()
+            flat[i] = o + eps
+            p.data.copy_(flat.reshape(p.shape)); lp = loss(m).item()
+            flat[i] = o - eps
+            p.data.copy_(flat.reshape(p.shape)); lm = loss(m).item()
+            flat[i] = o
+            p.data.copy_(flat.reshape(p.shape))
+            fd.view(-1)[i] = (lp - lm) / (2 * eps)
+        grads.append(fd)
+    return grads
+
+
+def test_parameter_gradient():
+    # The parameter adjoint (d loss / d theta) must match central differences,
+    # for a *fixed* y0 (no requires_grad) — the neural-ODE training case.
+    torch.manual_seed(0)
+    m = torch.nn.Sequential(nn.Linear(2, 3, dtype=torch.float64), nn.Tanh(),
+                            nn.Linear(3, 2, dtype=torch.float64))
+    y0 = torch.tensor([0.7, -0.4], dtype=torch.float64)
+    for solver in ("dense", "matrix_free"):
+        for p in m.parameters():
+            p.grad = None
+        yabi_torch.solve_ivp(m, y0, t_span=(0.0, 1.0), solver=solver).sum().backward()
+        adj = [p.grad.clone() for p in m.parameters()]
+        fd = _fd_param_grad(m, y0, solver)
+        for a, f in zip(adj, fd):
+            err = float((a - f).abs().max())
+            assert err < 1e-4, f"{solver}: adjoint-FD max error {err:.3e}"
+        print(f"parameter gradient ({solver}) == FD: OK")
+
+
+def test_neural_ode_training():
+    # End-to-end: train an MLP to reproduce a linear oscillator, one SGD step.
+    torch.manual_seed(1)
+    A = torch.tensor([[0.0, 1.0], [-1.0, 0.0]], dtype=torch.float64)
+    m = torch.nn.Sequential(nn.Linear(2, 8, dtype=torch.float64), nn.Tanh(),
+                            nn.Linear(8, 2, dtype=torch.float64))
+    opt = torch.optim.Adam(m.parameters(), lr=1e-2)
+    y0 = torch.tensor([1.0, 0.0], dtype=torch.float64)
+    target = torch.linalg.matrix_exp(A * 1.0) @ y0
+
+    def loss():
+        return ((yabi_torch.solve_ivp(m, y0, t_span=(0.0, 1.0)) - target) ** 2).sum()
+
+    l0 = loss().item()
+    opt.zero_grad()
+    loss().backward()
+    opt.step()
+    l1 = loss().item()
+    assert l1 < l0, f"loss did not decrease: {l0:.4e} -> {l1:.4e}"
+    print(f"neural ODE training: loss {l0:.4e} -> {l1:.4e} (one SGD step)")
+
+
 if __name__ == "__main__":
     test_linear_dense_matches_expm()
     test_linear_matrix_free_matches_dense()
@@ -122,4 +185,6 @@ if __name__ == "__main__":
     test_nn_module_gradcheck()
     test_mlp_modes_agree()
     test_mlp_gradcheck()
-    print("PASS: nn.Module f — automatic Jacobian (dense + matrix-free), adjoint gradcheck")
+    test_parameter_gradient()
+    test_neural_ode_training()
+    print("PASS: nn.Module f — automatic Jacobian (dense + matrix-free), y0 + parameter adjoint")

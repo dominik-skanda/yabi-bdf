@@ -31,7 +31,8 @@ print(yT)                    # [0.0179, 7.3e-8, 0.9821]  (mass conserved)
 `yabi_torch.solve_ivp` solves the autonomous initial-value problem `y' = f(y)`, `y(t0) = y0` with YABI's
 **BDF integrator** (orders 1–6, variable step, Newton iteration) — the kind of solver that handles *stiff*
 systems where explicit methods like `torchdiffeq`'s RK need impractically small steps. It is differentiable
-in `y0` through the **continuous adjoint**, so gradients flow through the ODE solve.
+in `y0` **and in the model parameters `θ`** through the **continuous adjoint**, so a neural ODE can be
+*trained* (`loss.backward()` fills both `y0.grad` and the network's `.grad`).
 
 - `f` is a `torch.nn.Module` or any callable `y -> f(y)` on a `float64` tensor — **no hand-written Jacobian**
   (it is computed automatically with `torch.autograd`).

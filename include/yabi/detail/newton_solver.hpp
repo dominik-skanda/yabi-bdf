@@ -1719,15 +1719,15 @@ template <typename Scalar> class NewtonSolver {
             if (base_.size() != domain || domain < n_)
                 return false;
 
-            std::vector<Scalar> direction(domain, Scalar(0));
+            // Only the state block of the direction is non-zero; jacobianVector
+            // Product expects a state-sized direction (size n), not the full
+            // domain (which also carries time/parameters).
             std::vector<Scalar> scaled(n_, Scalar(0));
-            for (unsigned int j = 0; j < n_; ++j) {
+            for (unsigned int j = 0; j < n_; ++j)
                 scaled[j] = (Scalar)std::scalbn(x[j], (int)scaling_D2_[j]);
-                direction[j] = scaled[j];
-            }
 
             std::vector<Scalar> jv;
-            if (!rhs_.jacobianVectorProduct(base_, direction, jv) || jv.size() < n_)
+            if (!rhs_.jacobianVectorProduct(base_, scaled, jv) || jv.size() < n_)
                 return false;
 
             for (unsigned int i = 0; i < n_; ++i) {
@@ -1808,7 +1808,9 @@ template <typename Scalar> class NewtonSolver {
         }
 
         const std::size_t domain = RHS->Domain();
-        std::vector<Scalar> direction(domain, Scalar(0));
+        // State-sized direction: jacobianVectorProduct expects a state-sized v,
+        // not the full domain (which also carries time/parameters).
+        std::vector<Scalar> direction(numOfSpecies, Scalar(0));
         for (j = 0; j < numOfSpecies; ++j)
             direction[j] = (Scalar)std::scalbn((Scalar)1.0, (int)scaling_D2[j]);
 

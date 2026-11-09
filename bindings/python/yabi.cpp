@@ -93,29 +93,90 @@ struct PyCallable {
 
 } // namespace
 
+namespace {
+
+// GIL-safe wrapper for the J·v callback (3 args), analogous to PyCallable: the
+// RHS is cloned inside continuousAdjoint with the GIL released, so the py::object
+// copy/destructor must re-acquire it.
+struct PyJV {
+    py::object jv;
+    std::size_t n;
+
+    PyJV(py::object f, std::size_t nn) : jv(std::move(f)), n(nn) {}
+    ~PyJV() {
+        py::gil_scoped_acquire acquire;
+        jv = py::object();
+    }
+    PyJV(const PyJV &other) : n(other.n) {
+        py::gil_scoped_acquire acquire;
+        jv = other.jv;
+    }
+    PyJV &operator=(const PyJV &other) {
+        if (this == &other)
+            return *this;
+        py::gil_scoped_acquire acquire;
+        jv = other.jv;
+        n = other.n;
+        return *this;
+    }
+
+    void operator()(const double *y, const double *v, double *out) const {
+        py::gil_scoped_acquire acquire;
+        py::array_t<double> y_arr(n, const_cast<double *>(y));
+        py::array_t<double> v_arr(n, const_cast<double *>(v));
+        py::array_t<double> r = py::array_t<double>::ensure(jv(y_arr, v_arr));
+        if (r.size() != static_cast<py::ssize_t>(n))
+            throw std::runtime_error("jv must return n doubles");
+        std::copy(r.data(), r.data() + n, out);
+    }
+};
+
+// Configure a UserODERHS for parameter sensitivity (T56): mark it
+// time+parameter layout (autonomous in time, so df/dt = 0) and supply the
+// df/dp callback.  The callback receives the full domain argument (y, t, p)
+// and returns the n*n_param column-major df/dp.
+void configure_parameters(yabi::UserODERHS<double> &rhs, py::object fp, std::size_t n,
+                          std::size_t n_param) {
+    rhs.setTimeDerivative([n](const double *, double *ft) { std::fill(ft, ft + n, 0.0); });
+    rhs.setParameterDerivative(n_param, PyCallable{std::move(fp), n + 1 + n_param, n * n_param});
+}
+
+} // namespace
+
 PYBIND11_MODULE(yabi, m) {
     m.doc() = "YABI BDF integrator — Python bindings (analytic / UserODERHS path)";
 
     py::class_<Integrator>(m, "BDFIntegrator")
-        .def(py::init([](py::object f, py::object jac, std::size_t n) {
+        .def(py::init([](py::object f, py::object jac, std::size_t n, py::object fp,
+                         std::size_t n_param) {
                  // Build a temporary UserODERHS around the Python callables;
                  // BDFIntegrator's constructor clones it (owning the copies), so
                  // the temporary may die here.
                  yabi::UserODERHS<double> rhs(n, PyCallable{f, n, n}, PyCallable{jac, n, n * n});
+                 if (!fp.is_none() && n_param > 0)
+                     configure_parameters(rhs, std::move(fp), n, n_param);
                  return new Integrator(rhs);
              }),
-             py::arg("f"), py::arg("jac"), py::arg("n"),
-             "Construct from Python callables f(y)->f and jac(y)->J (column-major).")
+             py::arg("f"), py::arg("jac"), py::arg("n"), py::arg("fp") = py::none(),
+             py::arg("n_param") = 0,
+             "Construct from Python callables f(y)->f and jac(y)->J (column-major); "
+             "optional fp(arg)->df/dp (column-major, n*n_param) enables the parameter adjoint.")
         .def("reset_integration",
              [](Integrator &it, py::array_t<double> y0, double max_step, double rtol,
-                py::array_t<double> atol, bool taping) {
+                py::array_t<double> atol, bool taping, py::object parameters) {
                  // Zero-copy: hand YABI the raw buffer pointers (no copy).
                  // `taping` records the trajectory so forward()/reverse() replay.
+                 if (!parameters.is_none()) {
+                     py::array_t<double> p = py::array_t<double>::ensure(parameters);
+                     return it.resetIntegration(y0.mutable_data(), 0.0, p.mutable_data(),
+                                                max_step, rtol, atol.mutable_data(), taping,
+                                                false, nullptr, nullptr, nullptr, nullptr, 0);
+                 }
                  return it.resetIntegration(y0.mutable_data(), max_step, rtol, atol.mutable_data(),
                                             taping, false, nullptr, nullptr, nullptr, nullptr, 0);
              },
              py::arg("y0"), py::arg("max_step"), py::arg("rtol"), py::arg("atol"),
-             py::arg("taping") = false)
+             py::arg("taping") = false, py::arg("parameters") = py::none())
         .def("integrate",
              [](Integrator &it, double t_end) {
                  // Release the GIL so independent trajectories (each their own
@@ -135,21 +196,28 @@ PYBIND11_MODULE(yabi, m) {
         // This is the stable, analytic-path reverse (the discrete reverse() is
         // CppAD-only), so it is the backward hook for autograd wrappers.
         .def("continuous_adjoint",
-             [](Integrator &it, py::array_t<double> seed_weights, py::array_t<double> adj_y0) {
+             [](Integrator &it, py::array_t<double> seed_weights, py::array_t<double> adj_y0,
+                py::object adj_param) {
                  // Snapshot the raw pointers first (pybind11 NumPy access needs
                  // the GIL), then release it so the backward adjoint loop over
                  // trajectories parallelizes.  The release is scoped so the GIL
                  // is re-acquired before the array arguments are destroyed.
                  double *seed = seed_weights.mutable_data();
                  double *adj = adj_y0.mutable_data();
+                 double *adjp = nullptr;
+                 py::array_t<double> adjp_arr;
+                 if (!adj_param.is_none()) {
+                     adjp_arr = py::array_t<double>::ensure(adj_param);
+                     adjp = adjp_arr.mutable_data();
+                 }
                  bool ok;
                  {
                      py::gil_scoped_release release;
-                     ok = it.continuousAdjoint(seed, adj, nullptr);
+                     ok = it.continuousAdjoint(seed, adj, adjp);
                  }
                  return ok;
              },
-             py::arg("seed_weights"), py::arg("adj_y0"))
+             py::arg("seed_weights"), py::arg("adj_y0"), py::arg("adj_param") = py::none())
         .def("set_algorithm_settings",
              [](Integrator &it, unsigned max_order, double mach_prec, bool hit_end,
                 unsigned ew_index) {
@@ -163,21 +231,18 @@ PYBIND11_MODULE(yabi, m) {
     // identity preconditioner, so the full Jacobian is never formed — one JVP per
     // Krylov iteration.  Used by solve_ivp's solver="matrix_free".
     m.def("matrix_free_integrator",
-          [](py::object f, py::object jv, std::size_t n) {
-              auto jv_fn = [jv, n](const double *y, const double *v, double *Jv) {
-                  // integrate() releases the GIL; re-acquire it to call the
-                  // Python JVP back.
-                  py::gil_scoped_acquire acquire;
-                  py::array_t<double> y_arr(n, const_cast<double *>(y));
-                  py::array_t<double> v_arr(n, const_cast<double *>(v));
-                  py::array_t<double> r = py::array_t<double>::ensure(jv(y_arr, v_arr));
-                  if (r.size() != static_cast<py::ssize_t>(n))
-                      throw std::runtime_error("jv must return n doubles");
-                  std::copy(r.data(), r.data() + n, Jv);
-              };
+          [](py::object f, py::object jv, std::size_t n, py::object fp, std::size_t n_param,
+             py::object ap) {
+              PyJV jv_fn{jv, n};
               auto dummy_jac = [n](const double *, double *J) { std::fill(J, J + n * n, 0.0); };
               yabi::UserODERHS<double> rhs(n, PyCallable{f, n, n}, dummy_jac);
               rhs.setJacobianVectorProduct(jv_fn);
+              // The continuous adjoint needs J^T lambda; a J·v-only RHS cannot
+              // assemble J, so supply the vector-Jacobian product directly.
+              if (!ap.is_none())
+                  rhs.setAdjointProduct(PyJV{std::move(ap), n});
+              if (!fp.is_none() && n_param > 0)
+                  configure_parameters(rhs, std::move(fp), n, n_param);
 
               auto *it = new Integrator(rhs);
               it->setJacobianBackend(yabi::JacobianBackend::MatrixFree);
@@ -204,19 +269,23 @@ PYBIND11_MODULE(yabi, m) {
               it->setLinearSolver(solver);
               return it;
           },
-          py::arg("f"), py::arg("jv"), py::arg("n"));
+          py::arg("f"), py::arg("jv"), py::arg("n"), py::arg("fp") = py::none(),
+          py::arg("n_param") = 0, py::arg("ap") = py::none());
 
 #ifdef YABI_HAS_CUDA
     // T54 — dense Newton solve offloaded to the GPU via cuSOLVER (CudaLinearSolver).
     // f/jac still run on the host (numpy); only the O(n³) factorize + solve are
     // on-device.  Used by solve_ivp's device="cuda" (dense).
     m.def("cuda_integrator",
-          [](py::object f, py::object jac, std::size_t n) {
+          [](py::object f, py::object jac, std::size_t n, py::object fp, std::size_t n_param) {
               yabi::UserODERHS<double> rhs(n, PyCallable{f, n, n}, PyCallable{jac, n, n * n});
+              if (!fp.is_none() && n_param > 0)
+                  configure_parameters(rhs, std::move(fp), n, n_param);
               auto *it = new Integrator(rhs);
               it->setLinearSolver(new yabi::CudaLinearSolver<double>());
               return it;
           },
-          py::arg("f"), py::arg("jac"), py::arg("n"));
+          py::arg("f"), py::arg("jac"), py::arg("n"), py::arg("fp") = py::none(),
+          py::arg("n_param") = 0);
 #endif
 }

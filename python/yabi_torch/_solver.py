@@ -63,6 +63,69 @@ def _automatic_jvp(f, device="cpu"):
     return jv_np
 
 
+def _automatic_vjp(f, n, device="cpu"):
+    """numpy-in/out Jᵀ·λ (vector-Jacobian product) for the matrix-free adjoint.
+
+    The continuous adjoint integrates J(y)ᵀ λ; a J·v-only RHS cannot assemble J,
+    so this supplies Jᵀλ directly via torch.autograd.grad."""
+    def ap_np(y_np, lam_np):
+        y_t = torch.tensor(y_np, dtype=torch.float64, requires_grad=True, device=device)
+        lam_t = torch.tensor(lam_np, dtype=torch.float64, device=device)
+        with torch.enable_grad():
+            out = f(y_t)
+            vjp = torch.autograd.grad(out, y_t, grad_outputs=lam_t)[0]
+        return vjp.detach().cpu().numpy()
+    return ap_np
+
+
+def _module_parameters(f):
+    """Return f's float64 parameters (f is an nn.Module), or None if it has none."""
+    if not hasattr(f, "parameters"):
+        return None
+    params = list(f.parameters())
+    if not params:
+        return None
+    if any(p.dtype != torch.float64 for p in params):
+        raise TypeError("model parameters must be torch.float64 (YABI is double precision)")
+    return params
+
+
+def _parameter_derivative(f, params, n, device="cpu"):
+    """numpy-in/out df/dp callback: arg (y, t, p) -> (n*n_param,) column-major df/dp.
+
+    Computed with torch.autograd: n reverse passes (one per output), each giving
+    the gradient of f_i w.r.t. the flattened model parameters."""
+    def fp_np(arg):
+        y_t = torch.tensor(arg[:n], dtype=torch.float64, device=device)
+        with torch.enable_grad():
+            out = f(y_t)
+            rows = []
+            for i in range(n):
+                g = torch.autograd.grad(out[i], params, retain_graph=True)
+                rows.append(torch.cat([gg.reshape(-1) for gg in g]))
+        J = torch.stack(rows)  # (n, n_param), J[i,j] = df_i/dp_j
+        return J.detach().cpu().numpy().reshape(-1, order="F")  # column-major
+    return fp_np
+
+
+def _flatten_params(params):
+    return np.concatenate([p.detach().cpu().numpy().reshape(-1) for p in params])
+
+
+def _scatter_param_grad(params, flat_grad):
+    """Scatter a flat parameter gradient onto the module parameters' .grad."""
+    offset = 0
+    for p in params:
+        m = p.numel()
+        chunk = torch.as_tensor(flat_grad[offset:offset + m], dtype=p.dtype).reshape(p.shape)
+        chunk = chunk.to(p.device)
+        if p.grad is None:
+            p.grad = chunk
+        else:
+            p.grad = p.grad + chunk
+        offset += m
+
+
 def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver="dense",
               threads=1, device="cpu"):
     """Solve y' = f(y), y(t0) = y0 to y(t1), differentiable in y0.
@@ -117,19 +180,23 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
                 "(YABI_USE_CUDA=ON)")
 
     f_np = _wrap_rhs(f, device)
+    params = _module_parameters(f)
+    n_param = sum(p.numel() for p in params) if params is not None else 0
+    fp_np = _parameter_derivative(f, params, n, device) if params is not None else None
     if solver == "matrix_free":
         jv_np = _automatic_jvp(f, device)
+        ap_np = _automatic_vjp(f, n, device)
 
         def make():
-            return yabi.matrix_free_integrator(f_np, jv_np, n)
+            return yabi.matrix_free_integrator(f_np, jv_np, n, fp_np, n_param, ap_np)
     elif solver == "dense":
         jac_np = jac if jac is not None else _automatic_jacobian(f, n, device)
         if device == "cuda":
             def make():
-                return yabi.cuda_integrator(f_np, jac_np, n)
+                return yabi.cuda_integrator(f_np, jac_np, n, fp_np, n_param)
         else:
             def make():
-                return yabi.BDFIntegrator(f_np, jac_np, n)
+                return yabi.BDFIntegrator(f_np, jac_np, n, fp_np, n_param)
     else:
         raise ValueError("solver must be 'dense' or 'matrix_free'")
 
@@ -138,10 +205,15 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
         def forward(ctx, y0_batch):
             y0_np = y0_batch.detach().numpy()  # (batch, n)
             batch = y0_np.shape[0]
+            p_np = _flatten_params(params) if params is not None else None
 
             def solve_one(b):
                 it = make()
-                assert it.reset_integration(y0_np[b], t_end, rtol, np.full(n, atol))
+                if params is not None:
+                    assert it.reset_integration(y0_np[b], t_end, rtol, np.full(n, atol),
+                                                False, p_np)
+                else:
+                    assert it.reset_integration(y0_np[b], t_end, rtol, np.full(n, atol))
                 it.set_algorithm_settings(5, np.finfo(np.float64).eps, True, 1)
                 assert it.integrate(t_end)
                 yb = np.zeros(n)
@@ -163,6 +235,8 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
 
             ctx.integrators = integrators
             ctx.n = n
+            ctx.n_param = n_param
+            ctx.params = params
             ctx.threads = threads
             return torch.as_tensor(yT, dtype=y0_batch.dtype)
 
@@ -177,18 +251,31 @@ def solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10, jac=None, solver=
 
             def adjoint_one(b):
                 adj_b = np.zeros(ctx.n)
+                if ctx.n_param > 0:
+                    adjp_b = np.zeros(ctx.n_param)
+                    assert ctx.integrators[b].continuous_adjoint(grad_np[b], adj_b, adjp_b)
+                    return adj_b, adjp_b
                 assert ctx.integrators[b].continuous_adjoint(grad_np[b], adj_b)
-                return adj_b
+                return adj_b, None
 
             if ctx.threads > 1 and batch > 1:
                 with ThreadPoolExecutor(max_workers=ctx.threads) as ex:
-                    adj_rows = list(ex.map(adjoint_one, range(batch)))
-                adj = np.stack(adj_rows)
+                    results = list(ex.map(adjoint_one, range(batch)))
             else:
-                adj = np.stack([adjoint_one(b) for b in range(batch)])
+                results = [adjoint_one(b) for b in range(batch)]
+
+            adj = np.stack([r[0] for r in results])
+            if ctx.n_param > 0:
+                adj_param = np.sum([r[1] for r in results], axis=0)
+                _scatter_param_grad(ctx.params, adj_param)
             return torch.as_tensor(adj, dtype=grad_yT.dtype)
 
     single = y0.dim() == 1
     y0_batch = y0 if not single else y0.unsqueeze(0)
+    # If f has parameters but y0 is not a grad leaf, still make the solve
+    # differentiable (via a detached copy) so loss.backward() runs the parameter
+    # adjoint; the y0 gradient on that throwaway copy is simply discarded.
+    if params is not None and not y0.requires_grad:
+        y0_batch = y0_batch.detach().requires_grad_(True)
     out = _Solve.apply(y0_batch)  # (batch, n)
     return out[0] if single else out

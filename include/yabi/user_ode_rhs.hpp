@@ -44,6 +44,8 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     using TimeDeriv = std::function<void(const Scalar *y, Scalar *ft)>;    // n, df/dt(y)
     using ParamDeriv =
         std::function<void(const Scalar *y, Scalar *fp)>; // n*n_param, column-major df/dp
+    using AdjointProduct =
+        std::function<void(const Scalar *y, const Scalar *lambda, Scalar *out)>; // n, J(y)^T lambda
     // Hessian of lambda^T f (state block) times direction v:
     //   result[i] = sum_{j,k} d^2(lambda^T f)/dy_i dy_j dy_k * v[j] ... = Hess(lambda^T f) * v.
     using HessianVector = std::function<void(const Scalar *y, const Scalar *lambda,
@@ -127,6 +129,15 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         return *this;
     }
 
+    // Optional analytic J(y)^T lambda (the vector-Jacobian product), n entries.
+    // The continuous adjoint needs J^T, not J·v; a matrix-free RHS that only
+    // supplies a J·v can give J^T lambda here (e.g. torch.autograd.grad) instead
+    // of assembling J.  When unset, adjointProduct forms J and transposes.
+    UserODERHS &setAdjointProduct(AdjointProduct ap) {
+        ap_ = std::move(ap);
+        return *this;
+    }
+
     std::size_t Domain() const override { return n_ + (has_time_ ? 1 : 0) + n_param_; }
     std::size_t Range() const override { return n_; }
 
@@ -174,9 +185,13 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
                         std::vector<Scalar> &result) const override {
         if (x.size() != Domain() || lambda.size() != n_)
             return false;
+        result.assign(n_, Scalar(0));
+        if (ap_) {
+            ap_(x.data(), lambda.data(), result.data());
+            return true;
+        }
         std::vector<Scalar> J(n_ * n_);
         jac_(x.data(), J.data());
-        result.assign(n_, Scalar(0));
         for (std::size_t k = 0; k < n_; ++k)
             for (std::size_t i = 0; i < n_; ++i)
                 result[k] += J[i + n_ * k] * lambda[i]; // J[i + n_*k] = df_i/dy_k
@@ -245,6 +260,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
         copy->pattern_ = pattern_;
         copy->pattern_valid_ = pattern_valid_;
         copy->jv_ = jv_;
+        copy->ap_ = ap_;
         copy->ft_ = ft_;
         copy->has_time_ = has_time_;
         copy->fp_ = fp_;
@@ -345,6 +361,7 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
     SparsityPattern pattern_;
     bool pattern_valid_ = false;
     JacobianVector jv_;
+    AdjointProduct ap_;
     TimeDeriv ft_;
     bool has_time_ = false;
     ParamDeriv fp_;
