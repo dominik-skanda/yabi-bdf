@@ -239,6 +239,17 @@ if(YABI_BUILD_PYTHON)
     set_tests_properties(python_autograd PROPERTIES
         ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>"
         LABELS "python")
+    # T51 — batched differentiable solve_ivp (needs torch; registered only when
+    # torch is importable so a torch-less build doesn't fail).
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import torch"
+        RESULT_VARIABLE YABI_TORCH_AVAILABLE)
+    if(YABI_TORCH_AVAILABLE EQUAL 0)
+        add_test(NAME python_solve_ivp
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_solve_ivp.py)
+        set_tests_properties(python_solve_ivp PROPERTIES
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            LABELS "python")
+    endif()
 endif()
 
 # T44 — telemetry harness: emits the machine-readable evidence table consumed by

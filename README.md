@@ -173,8 +173,12 @@ The first-order **continuous adjoint** (stable reverse sensitivity) is exposed a
 `integrator.continuous_adjoint(seed_weights, adj_y0)` — the backward hook for
 autograd wrappers.  `bindings/python/torch_wrapper.py` wraps it in a
 `torch.autograd.Function` (forward solve + adjoint backward), so gradients flow
-through the ODE solve w.r.t. the initial condition.  Not yet exposed in Python:
-forward-mode sensitivities, time-dependent RHS, and the CppAD auto-diff path.
+through the ODE solve w.r.t. the initial condition.  `bindings/python/yabi_torch.py`
+provides a batched `solve_ivp(f, jac, y0, t_span, rtol, atol)` on top of it
+(`y0` may be a batch; differentiable in `y0`); `test_solve_ivp.py` runs the
+`torch.autograd.gradcheck`, a batch check, and the stiff Robertson problem.  Not yet
+exposed in Python: forward-mode sensitivities, time-dependent RHS, and the CppAD
+auto-diff path.
 
 ## Usage
 
