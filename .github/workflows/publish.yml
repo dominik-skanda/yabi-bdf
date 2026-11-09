@@ -31,6 +31,11 @@ jobs:
         env:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*musllinux*"
+          # Only 64-bit x86_64 (the default also builds 32-bit i686, which has no
+          # OpenBLAS and is not needed).
+          CIBW_ARCHS_LINUX: "x86_64"
+          # Surface the CMake error on failure (default verbosity hides it).
+          CIBW_BUILD_VERBOSITY: "2"
           # Pin the manylinux image: manylinux2014 (CentOS 7) is EOL and its yum
           # repos are dead, so use manylinux_2_28 (AlmaLinux 8) for every Python.
           CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
