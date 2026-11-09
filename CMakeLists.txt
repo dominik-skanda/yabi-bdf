@@ -249,6 +249,12 @@ if(YABI_BUILD_PYTHON)
         set_tests_properties(python_solve_ivp PROPERTIES
             ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
             LABELS "python")
+        # T52 — nn.Module f with automatic Jacobian (dense + matrix-free).
+        add_test(NAME python_nn_module
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/test_nn_module.py)
+        set_tests_properties(python_nn_module PROPERTIES
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:yabi_python>:${CMAKE_CURRENT_SOURCE_DIR}/bindings/python"
+            LABELS "python")
     endif()
 endif()
 

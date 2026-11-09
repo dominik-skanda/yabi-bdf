@@ -17,10 +17,12 @@
 #include <pybind11/pybind11.h>
 
 #include <yabi/bdf_integrator.hpp>
+#include <yabi/matrix_free_solver.hpp>
 #include <yabi/user_ode_rhs.hpp>
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -100,4 +102,41 @@ PYBIND11_MODULE(yabi, m) {
              },
              py::arg("max_order"), py::arg("mach_prec"), py::arg("hit_end") = true,
              py::arg("ew_index") = 1);
+
+    // Matrix-free Newton (T32): f is the RHS, jv is the J·v (Jacobian-vector
+    // product).  The Newton solve uses a GMRES Krylov solver with a J-free
+    // identity preconditioner, so the full Jacobian is never formed — one JVP per
+    // Krylov iteration.  Used by solve_ivp's solver="matrix_free".
+    m.def("matrix_free_integrator",
+          [](py::object f, py::object jv, std::size_t n) {
+              auto jv_fn = [jv, n](const double *y, const double *v, double *Jv) {
+                  py::array_t<double> y_arr(n, const_cast<double *>(y));
+                  py::array_t<double> v_arr(n, const_cast<double *>(v));
+                  py::array_t<double> r = py::array_t<double>::ensure(jv(y_arr, v_arr));
+                  if (r.size() != static_cast<py::ssize_t>(n))
+                      throw std::runtime_error("jv must return n doubles");
+                  std::copy(r.data(), r.data() + n, Jv);
+              };
+              auto dummy_jac = [n](const double *, double *J) { std::fill(J, J + n * n, 0.0); };
+              yabi::UserODERHS<double> rhs(n, PyCallable{f, n, n}, dummy_jac);
+              rhs.setJacobianVectorProduct(jv_fn);
+
+              auto *it = new Integrator(rhs);
+              it->setJacobianBackend(yabi::JacobianBackend::MatrixFree);
+              auto *solver = new yabi::GmresLinearSolver<double>();
+              solver->setTolerance(1e-10, 0.0, 200, 30);
+              // J-free identity preconditioner (borrowed by the solver; kept
+              // alive for the module's lifetime).
+              static std::vector<std::shared_ptr<yabi::FunctionPreconditioner<double>>> keep_alive;
+              auto prec = std::make_shared<yabi::FunctionPreconditioner<double>>(
+                  false, [](const double *r, double *z, unsigned int sz) {
+                      std::copy(r, r + sz, z);
+                      return true;
+                  });
+              keep_alive.push_back(prec);
+              solver->setUserPreconditioner(prec.get());
+              it->setLinearSolver(solver);
+              return it;
+          },
+          py::arg("f"), py::arg("jv"), py::arg("n"));
 }
