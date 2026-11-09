@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "yabi-torch"
-version = "0.1.2"
+version = "0.1.3"
 description = "A batched, differentiable ODE solver — YABI's BDF + continuous adjoint, wrapped as a torch-native solve_ivp."
 readme = "python/README.md"
 requires-python = ">=3.10"
