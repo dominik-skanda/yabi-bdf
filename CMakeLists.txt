@@ -211,7 +211,10 @@ set_target_properties(yabi_pure PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # ---------------------------------------------------------------------------
 option(YABI_BUILD_PYTHON "Build the pybind11 `yabi` Python module (T37)" OFF)
 if(YABI_BUILD_PYTHON)
-    find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+    # Development.Module (not Development) — a pybind11 extension links against
+    # the interpreter, not libpython; Development also pulls in Development.Embed,
+    # which needs libpython.so that the manylinux build images do not ship.
+    find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
     # Locate a pip-installed pybind11 (>= 3.0) via its Python helper, so the
     # configure step finds it wherever pip put it (no hand-set pybind11_DIR).
     execute_process(COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
