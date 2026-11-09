@@ -48,6 +48,9 @@ if(YABI_USE_CPPAD)
     # T42 — CppAD (AD) and UserODERHS (analytic) backends agree.
     yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/rhs_backend_agreement.cpp"
         "component;backend")
+    # T35 — parallel sensitivity propagation (serial vs 4 threads).
+    yabi_register_test("${CMAKE_CURRENT_SOURCE_DIR}/component/parallel_sensitivity.cpp"
+        "component;sensitivity")
 endif()
 
 # T42 — solver agreement matrix: one loop test over every available solver.

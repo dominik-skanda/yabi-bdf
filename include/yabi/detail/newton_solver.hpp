@@ -12,6 +12,7 @@
 #include <cmath>
 #include <list>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <yabi/abstract_rhs.hpp>
@@ -27,6 +28,35 @@
 
 namespace yabi {
 namespace detail {
+
+namespace {
+// Chunked parallel-for (T35): split [begin, end) into `threads` contiguous
+// chunks and run each on its own std::thread.  threads <= 1 (or a unit range)
+// runs the body serially with thread index 0.  fn(i, t) receives the index and
+// the chunk/thread index (for per-thread scratch).
+template <typename F> void parallelForChunks(unsigned begin, unsigned end, unsigned threads, F &&fn) {
+    if (threads <= 1 || end - begin <= 1) {
+        for (unsigned i = begin; i < end; ++i)
+            fn(i, 0);
+        return;
+    }
+    const unsigned count = end - begin;
+    const unsigned nthreads = std::min(threads, count);
+    const unsigned chunk = (count + nthreads - 1) / nthreads;
+    std::vector<std::thread> workers;
+    workers.reserve(nthreads);
+    for (unsigned t = 0; t < nthreads; ++t) {
+        const unsigned b = begin + t * chunk;
+        const unsigned e = std::min(end, b + chunk);
+        workers.emplace_back([&, b, e, t] {
+            for (unsigned i = b; i < e; ++i)
+                fn(i, t);
+        });
+    }
+    for (auto &w : workers)
+        w.join();
+}
+} // namespace
 
 // Newton iteration for the BDF corrector.
 //
@@ -629,6 +659,8 @@ template <typename Scalar> class NewtonSolver {
             linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, nordsieck.corrector.data(), 1);
 
             if (numOfDerivatives > 0 && !direct) {
+                // 1. Serial residual: the CppAD Forward(1) tape replay is
+                //    stateful, so the direction residuals are built serially.
                 for (z = 0; z < numOfDerivatives; z++) {
                     for (j = 0; j < numOfSpecies; j++)
                         cppAD_argument[j] = root_derivatives[z][j];
@@ -656,16 +688,43 @@ template <typename Scalar> class NewtonSolver {
                                  b_derivatives[z].data(), 1);
                     for (j = 0; j < numOfSpecies; j++)
                         b_derivatives[z][j] = -(Scalar)scalbn(b_derivatives[z][j], scaling_D1[j]);
+                }
 
-                    sign =
-                        linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
-                                            scaling_D2.data(), b_derivatives[z].data(), numOfSpecies, 1);
-
-                    for (j = 0; j < numOfSpecies; j++)
-                        temp[j] = (Scalar)scalbn(b_derivatives[z][j], scaling_D2[j]);
-
-                    linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, root_derivatives[z].data(), 1);
-                    linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1, corrector_derivatives[z].data(), 1);
+                // 2. Solve + update: the directions are independent, so this is
+                //    parallelised (T35) when more than one thread is requested.
+                //    The dense LAPACK solve (dgetrs) only reads P/ipiv, so it is
+                //    thread-safe; each thread uses its own scratch buffer and
+                //    local loop indices.
+                const unsigned int nthreads = config.SENSITIVITY_THREADS;
+                if (nthreads > 1 && numOfDerivatives > 1) {
+                    if (parallel_temps_.size() != nthreads)
+                        parallel_temps_.assign(nthreads,
+                                               std::vector<Scalar>(numOfSpecies, (Scalar)0.0));
+                    parallelForChunks(0, numOfDerivatives, nthreads, [&](unsigned int zz,
+                                                                        unsigned int t) {
+                        std::vector<Scalar> &scratch = parallel_temps_[t];
+                        (void)linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
+                                                  scaling_D2.data(), b_derivatives[zz].data(),
+                                                  numOfSpecies, 1);
+                        for (unsigned int jj = 0; jj < numOfSpecies; ++jj)
+                            scratch[jj] = (Scalar)scalbn(b_derivatives[zz][jj], scaling_D2[jj]);
+                        linalg::AXPY(numOfSpecies, blasScalarONE, scratch.data(), 1,
+                                     root_derivatives[zz].data(), 1);
+                        linalg::AXPY(numOfSpecies, blasScalarONE, scratch.data(), 1,
+                                     corrector_derivatives[zz].data(), 1);
+                    });
+                } else {
+                    for (z = 0; z < numOfDerivatives; z++) {
+                        sign = linearSolver->solve(P.data(), ip.data(), scaling_D1.data(),
+                                                   scaling_D2.data(), b_derivatives[z].data(),
+                                                   numOfSpecies, 1);
+                        for (j = 0; j < numOfSpecies; j++)
+                            temp[j] = (Scalar)scalbn(b_derivatives[z][j], scaling_D2[j]);
+                        linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1,
+                                     root_derivatives[z].data(), 1);
+                        linalg::AXPY(numOfSpecies, blasScalarONE, temp.data(), 1,
+                                     corrector_derivatives[z].data(), 1);
+                    }
                 }
             }
 
@@ -1863,6 +1922,9 @@ template <typename Scalar> class NewtonSolver {
     Scalar convergenceIndicator = 0;
     unsigned int newtonFAIL = 0;
     unsigned int stepFAIL = 0;
+
+    // Per-thread scratch buffers for parallel sensitivity solves (T35).
+    std::vector<std::vector<Scalar>> parallel_temps_;
 };
 
 } // namespace detail

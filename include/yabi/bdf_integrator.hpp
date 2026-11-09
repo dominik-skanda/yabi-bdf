@@ -166,6 +166,13 @@ template <class Scalar> class BDFIntegrator {
     bool setMinTaylorCapacity(unsigned int MINTAYLOR);
     bool setMinMemoryADFunObjectes(unsigned int MINnumberADFunObjects);
 
+    // Thread-parallel sensitivity propagation (T35): set the number of threads
+    // used for the independent forward/simultaneous sensitivity directions.
+    // 1 = serial (default); >1 = chunked parallel solve+update.  The direction
+    // residual (CppAD tape replay) stays serial.  Requires a thread-safe linear
+    // solver (the default dense LAPACK solve is).
+    bool setSensitivityThreads(unsigned int threads);
+
     // Set a custom linear solver (e.g. for future sparse support). The
     // integrator takes ownership of the passed solver.  Installing a solver
     // whose CSC path is the production path (UMFPACK/KLU) automatically

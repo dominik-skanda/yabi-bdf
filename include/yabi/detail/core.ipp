@@ -1072,6 +1072,13 @@ bool BDFIntegrator<Scalar>::setMinTaylorCapacity(unsigned int MINTAYLOR_) {
     return true;
 }
 
+template <typename Scalar> bool BDFIntegrator<Scalar>::setSensitivityThreads(unsigned int threads) {
+    if (threads == 0)
+        return false;
+    config.SENSITIVITY_THREADS = threads;
+    return true;
+}
+
 template <typename Scalar>
 bool BDFIntegrator<Scalar>::setMinMemoryADFunObjectes(unsigned int MINnumberADFunObjects) {
     unsigned int i, counter;

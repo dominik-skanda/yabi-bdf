@@ -494,6 +494,18 @@ integrator.getSimultaneousDerivativesVector(solution_derivatives);
 `examples/sensitivity_demo.cpp` demonstrates all three modes and checks them
 against central finite differences.
 
+The forward/simultaneous sensitivity directions are independent, so their Newton
+solve + update parallelize across threads (T35):
+
+```cpp
+integrator.setSensitivityThreads(4); // 1 = serial (default); >1 = parallel
+```
+
+The direction *residual* (CppAD `Forward(1)` tape replay) stays serial — the tape
+is stateful — and the parallel solve requires a thread-safe linear solver (the
+default dense LAPACK solve is). `tests/component/parallel_sensitivity.cpp` and
+`tests/system/48_parallel_sensitivity.cpp` verify parallel == serial bit-for-bit.
+
 ### Higher-order (forward / reverse)
 
 `forward` and `reverse` take an `order` argument and support arbitrary order

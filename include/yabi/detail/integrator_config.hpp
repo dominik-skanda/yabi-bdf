@@ -44,6 +44,15 @@ template <typename Scalar> struct IntegratorConfig {
     unsigned int ERROR_WEIGHTS_INDEX = 1;
     unsigned int MINTAYLOR = 1;
 
+    // Thread-parallel sensitivity propagation (T35): the forward/simultaneous
+    // sensitivity directions are independent, so their Newton solve + update
+    // parallelize across threads.  Default 1 = serial (bit-identical); >1 opts
+    // into a chunked parallel loop.  Requires a thread-safe linear solver (the
+    // default dense LAPACK solve is; solvers with mutable per-solve state are
+    // not).  The direction *residual* (CppAD Forward(1) tape replay) stays
+    // serial — the tape is stateful.
+    unsigned int SENSITIVITY_THREADS = 1;
+
     bool updateEveryP = false;
 
     Scalar RESTRICT_ORDER_1_RATIO = (Scalar)3.000;
