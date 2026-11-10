@@ -53,7 +53,7 @@ solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10,
 | `jac` | optional analytic Jacobian, `numpy (n,) -> (n*n,)` column-major (else automatic) |
 | `solver` | `"dense"` (full Jacobian, dense Newton) or `"matrix_free"` (J·v via `torch.autograd`, GMRES) |
 | `threads` | trajectories solved concurrently (default 1 = serial; bit-identical to serial) |
-| `device` | `"cpu"` (default) or `"cuda"` (f/Jacobian on GPU + cuSOLVER Newton) |
+| `device` | `"cpu"` (default) or `"cuda"` (f/Jacobian on GPU + cuSOLVER Newton; needs a CUDA-enabled build) |
 
 ## Features
 
@@ -62,8 +62,9 @@ solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10,
 - **Dense and matrix-free** — both Jacobian representations behind one API.
 - **Batched + differentiable** — solve a batch and backprop through it.
 - **Parallel batch** — `threads=N` is bit-identical to serial.
-- **GPU** — `device="cuda"` offloads the Newton LU to cuSOLVER; on a GPU with compute capability ≥ 7.5 it also
-  evaluates `f` on-device.
+- **GPU** — `device="cuda"` offloads the dense Newton LU to cuSOLVER and (on a GPU with compute capability ≥ 7.5)
+  evaluates `f` on-device.  **This requires a CUDA-enabled build (`YABI_USE_CUDA=ON`)** — the PyPI wheels are
+  CPU-only, so `device="cuda"` needs a source build. A CUDA wheel is planned.
 
 ## Requirements
 

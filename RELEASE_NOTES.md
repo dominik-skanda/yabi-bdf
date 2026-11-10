@@ -35,9 +35,11 @@ Reproduce with `benchmarks/torchdiffeq_comparison.py`.
 
 - Automatic Jacobian via `torch.autograd`; `solver="dense"` or `"matrix_free"`.
 - Batched `(batch, n)` + parallel `threads=N` (bit-identical to serial).
-- GPU: `device="cuda"` offloads the Newton LU to cuSOLVER.
+- GPU: `device="cuda"` offloads the Newton LU to cuSOLVER (requires a CUDA-enabled
+  source build, `YABI_USE_CUDA=ON`; not in the CPU-only PyPI wheels yet).
 
 ## Honest limits
 
 Alpha; `float64` only; stiff systems only (on non-stiff problems an explicit RK
-is the right tool); Linux x86_64 wheels (cp310–313) + sdist.
+is the right tool); Linux x86_64 wheels (cp310–313) + sdist, **CPU-only** (the
+`device="cuda"` path needs a source build with CUDA).
