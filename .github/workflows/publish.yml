@@ -75,3 +75,23 @@ jobs:
         run: |
           python -m pip install --upgrade twine
           python -m twine upload --skip-existing dist/*
+
+  release:
+    name: Create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "release for ${{ github.ref_name }} already exists — skipping"
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "yabi-torch ${{ github.ref_name }}" \
+              --notes-file RELEASE_NOTES.md
+          fi
