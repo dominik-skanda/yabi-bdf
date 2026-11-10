@@ -102,7 +102,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build, build_cuda]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -110,11 +110,9 @@ jobs:
           name: dist
           path: dist/
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist-cuda
-          path: dist/
-
+      # The CUDA wheel (dist-cuda) is too large for PyPI's ~100 MB per-file limit,
+      # so it is NOT uploaded here — it is attached to the GitHub release instead
+      # (see the `release` job below).
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
@@ -125,12 +123,22 @@ jobs:
 
   release:
     name: Create GitHub release
-    needs: publish
+    needs: [build, build_cuda]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: release/
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-cuda
+          path: release/
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -142,3 +150,4 @@ jobs:
               --title "yabi-torch ${{ github.ref_name }}" \
               --notes-file RELEASE_NOTES.md
           fi
+          gh release upload "${{ github.ref_name }}" release/*.whl release/*.tar.gz --clobber
