@@ -86,11 +86,17 @@ jobs:
           # runtime: cuSOLVER/cuBLAS/cuSPARSE/cudart + nvJitLink (a transitive dep
           # of cuBLAS).  The devel packages provide cusolverDn.h / cuda_runtime.h
           # for the build; auditwheel bundles the runtime .so files into the wheel.
+          # The RPMs install to the non-standard targets/x86_64-linux/{include,lib}
+          # layout, so symlink it into the standard <root>/include + <root>/lib64
+          # that CMake's find_package(CUDAToolkit) expects.
           CIBW_BEFORE_ALL_LINUX: >-
             yum install -y openblas-devel gcc-gfortran &&
             printf '[cuda]\nname=cuda\nbaseurl=https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64\nenabled=1\ngpgcheck=0\n' > /etc/yum.repos.d/cuda.repo &&
             yum install -y cuda-cudart-devel-13-0 libcusolver-devel-13-0
-            libcublas-13-0 libcusparse-13-0 libnvjitlink-13-0
+            libcublas-13-0 libcusparse-13-0 libnvjitlink-13-0 &&
+            ln -sfn /usr/local/cuda-13.0/targets/x86_64-linux/include /usr/local/cuda-13.0/include &&
+            ln -sfn /usr/local/cuda-13.0/targets/x86_64-linux/lib /usr/local/cuda-13.0/lib64 &&
+            ln -sfn /usr/local/cuda-13.0 /usr/local/cuda
           CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON"'
 
       - uses: actions/upload-artifact@v4
