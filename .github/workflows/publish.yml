@@ -80,7 +80,7 @@ jobs:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*musllinux*"
           CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_BUILD_VERBOSITY: "2"
+          CIBW_BUILD_VERBOSITY: "3"
           CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
           # OpenBLAS/gfortran (as in the CPU build) plus the CUDA 13.0 host-side
           # runtime: cuSOLVER/cuBLAS/cuSPARSE/cudart + nvJitLink (a transitive dep
@@ -97,7 +97,7 @@ jobs:
             ln -sfn /usr/local/cuda-13.0/targets/x86_64-linux/include /usr/local/cuda-13.0/include &&
             ln -sfn /usr/local/cuda-13.0/targets/x86_64-linux/lib /usr/local/cuda-13.0/lib64 &&
             ln -sfn /usr/local/cuda-13.0 /usr/local/cuda
-          CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON"'
+          CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON" CUDAToolkit_ROOT=/usr/local/cuda'
 
       - uses: actions/upload-artifact@v4
         with:
