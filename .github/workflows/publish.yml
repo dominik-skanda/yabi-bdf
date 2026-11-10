@@ -58,14 +58,59 @@ jobs:
           name: dist
           path: wheelhouse/*
 
+  build_cuda:
+    name: Build CUDA wheels (+cu126)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # One package (torch-style): the CUDA build is published as a local version
+      # `yabi-torch==<version>+cu126` of the SAME `yabi-torch` package, so a plain
+      # `pip install yabi-torch` picks it up.  This is safe on CPU-only machines
+      # because the CUDA runtime libs load the driver lazily (verified: no hard
+      # libcuda.so.1 NEEDED on cusolver/cublas/cusparse/cudart/nvJitLink).
+      - name: Tag the version as +cu126
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = .*/version = \"${VERSION}+cu126\"/" pyproject.toml
+
+      - name: Build CUDA wheels (manylinux)
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_SKIP: "*musllinux*"
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_BUILD_VERBOSITY: "2"
+          CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
+          # OpenBLAS/gfortran (as in the CPU build) plus the CUDA 12.6 host-side
+          # runtime: cuSOLVER/cuBLAS/cuSPARSE/cudart + nvJitLink (a transitive dep
+          # of cuBLAS).  The devel packages provide cusolverDn.h / cuda_runtime.h
+          # for the build; auditwheel bundles the runtime .so files into the wheel.
+          CIBW_BEFORE_ALL_LINUX: >-
+            yum install -y openblas-devel gcc-gfortran &&
+            printf '[cuda]\nname=cuda\nbaseurl=https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64\nenabled=1\ngpgcheck=0\n' > /etc/yum.repos.d/cuda.repo &&
+            yum install -y cuda-cudart-devel-12-6 cuda-cusolver-devel-12-6
+            cuda-cublas-12-6 cuda-cusparse-12-6 cuda-nvjitlink-12-6
+          CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON"'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-cuda
+          path: wheelhouse/*
+
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build, build_cuda]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-cuda
           path: dist/
 
       - name: Publish to PyPI
