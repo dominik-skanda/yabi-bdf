@@ -53,6 +53,19 @@ yT.sum().backward()   # y0.grad = d(sum y(T)) / d y0 via the continuous adjoint
 (`torch.autograd`) unless you pass an analytic `jac`. See "Python bindings" below for the full API
 (`solver="dense"|"matrix_free"`, `threads=N` for a parallel batch, `device="cuda"`).
 
+The solve is differentiable in **both** `y0` and the model parameters, so a neural ODE can be *trained*:
+
+```python
+net = torch.nn.Sequential(nn.Linear(2, 8, dtype=torch.float64), nn.Tanh(),
+                          nn.Linear(8, 2, dtype=torch.float64))
+loss = ((solve_ivp(net, y0, t_span=(0.0, 1.0)) - target) ** 2).sum()
+loss.backward()   # fills every net parameter's .grad, via the continuous adjoint
+```
+
+**Why a BDF:** on Robertson (the canonical stiff ODE) it is **~25× faster than `torchdiffeq`'s `dopri5`
+at t=1, ~380× at t=10** — the gap grows with stiffness. Reproduce with `benchmarks/torchdiffeq_comparison.py`.
+It is a *stiff-systems* solver: on non-stiff problems an explicit RK is the right tool.
+
 ## Quick Verification
 
 Prove tolerance adherence, first-order convergence, and higher-order sensitivity
