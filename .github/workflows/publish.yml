@@ -89,8 +89,8 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: >-
             yum install -y openblas-devel gcc-gfortran &&
             printf '[cuda]\nname=cuda\nbaseurl=https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64\nenabled=1\ngpgcheck=0\n' > /etc/yum.repos.d/cuda.repo &&
-            yum install -y cuda-cudart-devel-12-6 cuda-cusolver-devel-12-6
-            cuda-cublas-12-6 cuda-cusparse-12-6 cuda-nvjitlink-12-6
+            yum install -y cuda-cudart-devel-12-6 libcusolver-devel-12-6
+            libcublas-12-6 libcusparse-12-6 libnvjitlink-12-6
           CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON"'
 
       - uses: actions/upload-artifact@v4
