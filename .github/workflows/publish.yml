@@ -59,20 +59,20 @@ jobs:
           path: wheelhouse/*
 
   build_cuda:
-    name: Build CUDA wheels (+cu126)
+    name: Build CUDA wheels (+cu130)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       # One package (torch-style): the CUDA build is published as a local version
-      # `yabi-torch==<version>+cu126` of the SAME `yabi-torch` package, so a plain
+      # `yabi-torch==<version>+cu130` of the SAME `yabi-torch` package, so a plain
       # `pip install yabi-torch` picks it up.  This is safe on CPU-only machines
       # because the CUDA runtime libs load the driver lazily (verified: no hard
       # libcuda.so.1 NEEDED on cusolver/cublas/cusparse/cudart/nvJitLink).
-      - name: Tag the version as +cu126
+      - name: Tag the version as +cu130
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s/^version = .*/version = \"${VERSION}+cu126\"/" pyproject.toml
+          sed -i "s/^version = .*/version = \"${VERSION}+cu130\"/" pyproject.toml
 
       - name: Build CUDA wheels (manylinux)
         uses: pypa/cibuildwheel@v2.22.0
@@ -82,15 +82,15 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_BUILD_VERBOSITY: "2"
           CIBW_MANYLINUX_X86_64_IMAGE: "quay.io/pypa/manylinux_2_28_x86_64"
-          # OpenBLAS/gfortran (as in the CPU build) plus the CUDA 12.6 host-side
+          # OpenBLAS/gfortran (as in the CPU build) plus the CUDA 13.0 host-side
           # runtime: cuSOLVER/cuBLAS/cuSPARSE/cudart + nvJitLink (a transitive dep
           # of cuBLAS).  The devel packages provide cusolverDn.h / cuda_runtime.h
           # for the build; auditwheel bundles the runtime .so files into the wheel.
           CIBW_BEFORE_ALL_LINUX: >-
             yum install -y openblas-devel gcc-gfortran &&
             printf '[cuda]\nname=cuda\nbaseurl=https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64\nenabled=1\ngpgcheck=0\n' > /etc/yum.repos.d/cuda.repo &&
-            yum install -y cuda-cudart-devel-12-6 libcusolver-devel-12-6
-            libcublas-12-6 libcusparse-12-6 libnvjitlink-12-6
+            yum install -y cuda-cudart-devel-13-0 libcusolver-devel-13-0
+            libcublas-13-0 libcusparse-13-0 libnvjitlink-13-0
           CIBW_ENVIRONMENT: 'CMAKE_ARGS="-DBLA_VENDOR=OpenBLAS -DYABI_USE_CUDA=ON"'
 
       - uses: actions/upload-artifact@v4

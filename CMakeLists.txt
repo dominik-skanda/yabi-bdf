@@ -77,27 +77,19 @@ endif()
 # ---------------------------------------------------------------------------
 option(YABI_USE_CUDA "Build the experimental cuSOLVER linear solver + GPU test (T36)" OFF)
 if(YABI_USE_CUDA)
-    find_path(CUDA_INCLUDE_DIR cusolverDn.h
-        PATHS /usr/local/cuda-12.6/include /usr/local/cuda/include $ENV{CUDA_HOME}
-        PATH_SUFFIXES include)
-    find_library(CUSOLVER_LIBRARY cusolver
-        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
-        PATH_SUFFIXES lib64 lib)
-    find_library(CUSPARSE_LIBRARY cusparse
-        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
-        PATH_SUFFIXES lib64 lib)
-    find_library(CUBLAS_LIBRARY cublas
-        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
-        PATH_SUFFIXES lib64 lib)
-    find_library(CUDART_LIBRARY cudart
-        PATHS /usr/local/cuda-12.6/lib64 /usr/local/cuda/lib64 $ENV{CUDA_HOME}
-        PATH_SUFFIXES lib64 lib)
-    if(CUDA_INCLUDE_DIR AND CUSOLVER_LIBRARY AND CUSPARSE_LIBRARY AND CUBLAS_LIBRARY AND CUDART_LIBRARY)
-        message(STATUS "CUDA (cuSOLVER/cuSPARSE/cuBLAS) found: ${CUDA_INCLUDE_DIR}")
-    else()
-        message(FATAL_ERROR
-            "YABI_USE_CUDA=ON but CUDA (cusolverDn.h, libcusolver, libcusparse, libcublas, libcudart) was not found.")
-    endif()
+    # Locate the CUDA toolkit wherever it is installed (runfile or distro RPM
+    # under /usr/local/cuda-*).  FindCUDAToolkit globs /usr/local/cuda* and honors
+    # CUDA_HOME/CUDA_PATH/CUDAToolkit_ROOT, so no hardcoded path is needed.  Only
+    # the host-side cuSOLVER/cuBLAS/cuSPARSE/cudart runtime is required (no nvcc).
+    find_package(CUDAToolkit REQUIRED COMPONENTS cusolver cusparse cublas cudart)
+    # Map to the legacy variable names used by the yabi_python link below and by
+    # tests/CMakeLists.txt, so the whole tree builds without further edits.
+    set(CUDA_INCLUDE_DIR "${CUDAToolkit_INCLUDE_DIRS}")
+    set(CUSOLVER_LIBRARY CUDA::cusolver)
+    set(CUSPARSE_LIBRARY CUDA::cusparse)
+    set(CUBLAS_LIBRARY CUDA::cublas)
+    set(CUDART_LIBRARY CUDA::cudart)
+    message(STATUS "CUDA found: ${CUDAToolkit_INCLUDE_DIRS} (version ${CUDAToolkit_VERSION})")
 endif()
 
 # ---------------------------------------------------------------------------
