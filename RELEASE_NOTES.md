@@ -1,45 +1,37 @@
-# yabi-torch 0.1.3
+# yabi-torch 0.1.4
 
-`pip install yabi-torch`
+`pip install yabi-torch` (CPU). GPU: `pip install <the 0.1.4+cu130 wheel from this release's assets>`.
 
 A batched, differentiable ODE solver for PyTorch — YABI's variable-order BDF
 integrator + continuous adjoint, wrapped as a torch-native `solve_ivp`.
 
-## What's new in 0.1.3
+## What's new in 0.1.4
 
-The solve is now differentiable in the model parameters too, so a neural ODE can
-be *trained*: `loss.backward()` fills both `y0.grad` and every network `.grad`
-through the continuous adjoint's augmented (λ, μ) state.
+- **Fixed a matrix-free bug (T58):** `matrix_free` + a parameterized `nn.Module` RHS now integrates
+  stiff problems to t=1e5 (it previously failed with "too much newton steps rejected" because the
+  initial step-size estimate was built from the zero dummy Jacobian instead of the J·v hook).
+  Regression-guarded by `test_nn_module.py::test_matrix_free_parameter_longtime`.
 
-```python
-import torch
-from yabi_torch import solve_ivp
+## Independent review (T57) — measured
 
-net = torch.nn.Sequential(nn.Linear(2, 8, dtype=torch.float64), nn.Tanh(),
-                          nn.Linear(8, 2, dtype=torch.float64))
-y0 = torch.tensor([1.0, 0.0], dtype=torch.float64)
-loss = ((solve_ivp(net, y0, t_span=(0.0, 1.0)) - target) ** 2).sum()
-loss.backward()   # fills every net parameter's .grad
+- **Mass conservation** on Robertson at t=1e5 is machine-precision (`|sum−1| ≈ 1e-15`, dense + matrix-free).
+- **Stiff-rate adjoint** `d y0/d(1e4)` matches central differences to ~1e-9 absolute (dense + matrix-free).
+- **Implicit baseline:** SciPy `BDF` agrees to tolerance (conserves to 4e-16); `torchdiffeq`'s
+  `implicit_adams` diverges to 1e111 (it uses fixed-point iteration, not Newton — not a stiff solver).
+- **Adjoint under Newton-step rejection** (`rtol=1e-10`) still matches finite differences (~1e-10).
+
+## GPU (CUDA 13.0)
+
+The CUDA wheels are published as **release assets** (each ~743 MB — too large for PyPI's ~100 MB
+per-file limit). They bundle the CUDA 13.0 runtime (cuSOLVER/cuBLAS/cuSPARSE/cudart/nvJitLink). Install:
+
+```bash
+pip install https://github.com/dominik-skanda/yabi-bdf/releases/download/v0.1.4/yabi_torch-0.1.4+cu130-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
 ```
 
-Two core bugs fixed on the way (accuracy-first): the matrix-free adjoint used a
-dummy zero Jacobian (it now supplies Jᵀλ directly), and the matrix-free operator
-passed a full-domain direction where a state-sized `v` was expected.
-
-## Why a BDF
-
-Explicit solvers like `torchdiffeq`'s `dopri5` are the wrong tool for *stiff*
-systems (chemical kinetics, circuits, biological networks). On Robertson, the
-canonical stiff ODE, yabi-torch is **~25× faster at t=1 and ~380× at t=10**.
-Reproduce with `benchmarks/torchdiffeq_comparison.py`.
-
-- Automatic Jacobian via `torch.autograd`; `solver="dense"` or `"matrix_free"`.
-- Batched `(batch, n)` + parallel `threads=N` (bit-identical to serial).
-- GPU: `device="cuda"` offloads the Newton LU to cuSOLVER (requires a CUDA-enabled
-  source build, `YABI_USE_CUDA=ON`; not in the CPU-only PyPI wheels yet).
+(adjust `cp310` to your Python; needs a CUDA 13 driver and a Turing (sm_75) or newer GPU).
 
 ## Honest limits
 
-Alpha; `float64` only; stiff systems only (on non-stiff problems an explicit RK
-is the right tool); Linux x86_64 wheels (cp310–313) + sdist, **CPU-only** (the
-`device="cuda"` path needs a source build with CUDA).
+Alpha; `float64` only; stiff systems only (on non-stiff problems an explicit RK is the right tool);
+Linux x86_64 wheels (cp310–313) + sdist.
