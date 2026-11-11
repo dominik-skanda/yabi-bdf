@@ -177,6 +177,32 @@ def test_neural_ode_training():
     print(f"neural ODE training: loss {l0:.4e} -> {l1:.4e} (one SGD step)")
 
 
+def test_matrix_free_parameter_longtime():
+    # T58 regression guard: matrix-free + a parameterized RHS must integrate the
+    # stiff Robertson problem to t=1e5 (it used to fail with "too much newton
+    # steps rejected" because the matrix-free Forward(1,·) built the Jacobian
+    # from the zero dummy Jacobian, corrupting the initial step-size estimate).
+    class Robertson(nn.Module):
+        def __init__(self, k=1e4):
+            super().__init__()
+            self.k = nn.Parameter(torch.tensor(float(k), dtype=torch.float64))
+
+        def forward(self, y):
+            return torch.stack([-0.04 * y[0] + self.k * y[1] * y[2],
+                                0.04 * y[0] - self.k * y[1] * y[2] - 3e7 * y[1] ** 2,
+                                3e7 * y[1] ** 2])
+
+    m = Robertson()
+    y0 = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64)
+    dense = yabi_torch.solve_ivp(m, y0, t_span=(0.0, 1e5), rtol=1e-6, atol=1e-10)
+    mfree = yabi_torch.solve_ivp(m, y0, t_span=(0.0, 1e5), rtol=1e-6, atol=1e-10,
+                                 solver="matrix_free")
+    assert torch.allclose(dense, mfree, atol=1e-6, rtol=1e-6), f"{dense} vs {mfree}"
+    # mass conservation still holds to machine precision
+    assert abs(mfree.sum().item() - 1.0) < 1e-12
+    print("matrix-free + parameterized RHS at t=1e5 == dense: OK")
+
+
 if __name__ == "__main__":
     test_linear_dense_matches_expm()
     test_linear_matrix_free_matches_dense()
@@ -187,4 +213,5 @@ if __name__ == "__main__":
     test_mlp_gradcheck()
     test_parameter_gradient()
     test_neural_ode_training()
+    test_matrix_free_parameter_longtime()
     print("PASS: nn.Module f — automatic Jacobian (dense + matrix-free), y0 + parameter adjoint")

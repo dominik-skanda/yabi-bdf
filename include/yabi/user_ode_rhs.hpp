@@ -149,12 +149,22 @@ template <typename Scalar> class UserODERHS : public AbstractRHS<Scalar> {
             return f;
         }
         if (p == 1) {
-            std::vector<Scalar> J(n_ * n_);
-            jac_(point_.data(), J.data());
             std::vector<Scalar> df(n_, Scalar(0));
-            for (std::size_t i = 0; i < n_; ++i)
-                for (std::size_t j = 0; j < n_; ++j)
-                    df[i] += J[i + n_ * j] * x[j];
+            if (jv_) {
+                // Matrix-free mode: form J·x from the Jacobian-vector product.
+                // The analytic Jacobian jac_ is a zero dummy here (no analytic J
+                // is supplied), so falling back to it would give J·x = 0 and
+                // corrupt anything that builds J from Forward(1, ·) (e.g. the
+                // initial step-size estimate).
+                std::vector<Scalar> x_state(x.begin(), x.begin() + n_);
+                jv_(point_.data(), x_state.data(), df.data());
+            } else {
+                std::vector<Scalar> J(n_ * n_);
+                jac_(point_.data(), J.data());
+                for (std::size_t i = 0; i < n_; ++i)
+                    for (std::size_t j = 0; j < n_; ++j)
+                        df[i] += J[i + n_ * j] * x[j];
+            }
             if (has_time_ && x.size() > n_) {
                 std::vector<Scalar> ft(n_);
                 ft_(point_.data(), ft.data());

@@ -53,7 +53,7 @@ solve_ivp(f, y0, t_span=(0.0, 1.0), rtol=1e-8, atol=1e-10,
 | `jac` | optional analytic Jacobian, `numpy (n,) -> (n*n,)` column-major (else automatic) |
 | `solver` | `"dense"` (full Jacobian, dense Newton) or `"matrix_free"` (J·v via `torch.autograd`, GMRES) |
 | `threads` | trajectories solved concurrently (default 1 = serial; bit-identical to serial) |
-| `device` | `"cpu"` (default) or `"cuda"` (f/Jacobian on GPU + cuSOLVER Newton; needs a CUDA-enabled build) |
+| `device` | `"cpu"` (default) or `"cuda"` (f/Jacobian on GPU + cuSOLVER Newton; needs the CUDA wheel) |
 
 ## Features
 
