@@ -19,12 +19,14 @@ Robertson problem (a canonical stiff ODE), `float64`, single-threaded, `rtol=1e-
 | dense | `[1.786699e-02, 7.275182e-08, 9.821329e-01]` | 1.2e-15 |
 | matrix_free | `[1.786699e-02, 7.275183e-08, 9.821329e-01]` | 3.1e-15 |
 
-Both representations conserve mass to machine precision.
+Both representations conserve mass to machine precision — far within the `rtol=1e-6` / `atol=1e-10`
+tolerances.
 
 ## 2. Adjoint vs finite differences on the stiff rate
 
 `d y0(T)/d(1e4)`, where the `1e4` coefficient is a trainable parameter, computed by the continuous
-adjoint and compared against a central difference (FD reference solved at `rtol=1e-12`).
+adjoint and compared against a central difference with a small perturbation `δ = 0.1` (0.001% of the
+`1e4` coefficient); the FD reference is solved at `rtol=1e-12`.
 
 | solver | t | adjoint | finite difference | \|adj − FD\| |
 |---|---|---|---|---|
